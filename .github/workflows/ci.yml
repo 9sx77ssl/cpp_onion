@@ -1,0 +1,27 @@
+name: ci
+on: [push, pull_request]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { cxx: g++-14, packages: g++-14 }
+          - { cxx: clang++-18, packages: clang-18 }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y ${{ matrix.packages }} libsodium-dev ninja-build
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
+          -DONION_NATIVE=OFF
+          -DONION_SANITIZE=ON
+      - name: Build
+        run: cmake --build build
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
