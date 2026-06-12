@@ -3,6 +3,7 @@ add_library(onion_crypto STATIC
   keys.cpp
   fe25519.cpp
   ge25519.cpp
+  incremental.cpp
 )
 target_include_directories(onion_crypto PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(onion_crypto
