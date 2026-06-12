@@ -14,6 +14,7 @@ add_executable(onion_tests
   test_fe25519.cpp
   test_ge25519.cpp
   test_incremental.cpp
+  test_incremental_engine.cpp
 )
 target_link_libraries(onion_tests PRIVATE Catch2::Catch2WithMain onion_options Threads::Threads
   onion_crypto onion_core onion_engine onion_engine_cpu onion_io)
