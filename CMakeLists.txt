@@ -10,6 +10,17 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(ONION_NATIVE "Build with -march=native" ON)
 option(ONION_SANITIZE "Enable ASan+UBSan" OFF)
+option(ONION_USE_MOLD "Link with the mold linker when available" ON)
+
+if(ONION_USE_MOLD)
+  find_program(MOLD_LINKER mold)
+  if(MOLD_LINKER)
+    add_link_options(-fuse-ld=mold)
+    message(STATUS "Linking with mold: ${MOLD_LINKER}")
+  else()
+    message(STATUS "mold not found; using the default linker")
+  endif()
+endif()
 
 add_library(onion_options INTERFACE)
 target_compile_options(onion_options INTERFACE -Wall -Wextra -Wpedantic)
