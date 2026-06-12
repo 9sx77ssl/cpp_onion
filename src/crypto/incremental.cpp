@@ -1,7 +1,5 @@
 #include "crypto/incremental.hpp"
 
-#include <vector>
-
 namespace onion::crypto {
 
 std::array<std::byte, 32> scalar_add_8i(std::span<const std::byte, 32> a0, std::uint64_t i) {
@@ -24,24 +22,28 @@ IncrementalStepper::IncrementalStepper(std::span<const std::byte, 32> a0) {
 }
 
 void IncrementalStepper::next_batch_impl(std::array<std::byte, 32>* out, std::size_t n) {
-    // Collect points and their Z, then Montgomery batch-invert the Z values.
-    std::vector<GeP3> pts(n);
-    std::vector<Fe> z(n), prefix(n);
+    // Keep only Y and Z per candidate, then Montgomery batch-invert the Z values.
+    // The scratch is reused across batches (resize is a no-op once sized).
+    if (ys_.size() < n) {
+        ys_.resize(n);
+        z_.resize(n);
+        prefix_.resize(n);
+    }
     for (std::size_t i = 0; i < n; ++i) {
-        pts[i] = cur_;
-        z[i] = cur_.Z;
+        ys_[i] = cur_.Y;
+        z_[i] = cur_.Z;
         cur_ = ge_add(cur_, step8b_);
     }
-    // prefix products: prefix[i] = z[0]*...*z[i]
-    prefix[0] = z[0];
-    for (std::size_t i = 1; i < n; ++i) prefix[i] = fe_mul(prefix[i - 1], z[i]);
-    Fe inv = fe_invert(prefix[n - 1]);  // 1 / (z[0]*...*z[n-1])
-    // back-substitute: zinv[i] = inv * prefix[i-1]; inv *= z[i]
+    // prefix products: prefix_[i] = z_[0]*...*z_[i]
+    prefix_[0] = z_[0];
+    for (std::size_t i = 1; i < n; ++i) prefix_[i] = fe_mul(prefix_[i - 1], z_[i]);
+    Fe inv = fe_invert(prefix_[n - 1]);  // 1 / (z_[0]*...*z_[n-1])
+    // back-substitute: zinv[i] = inv * prefix_[i-1]; inv *= z_[i]
     for (std::size_t i = n; i-- > 0;) {
-        Fe zinv = (i == 0) ? inv : fe_mul(inv, prefix[i - 1]);
-        Fe y = fe_mul(pts[i].Y, zinv);
+        Fe zinv = (i == 0) ? inv : fe_mul(inv, prefix_[i - 1]);
+        Fe y = fe_mul(ys_[i], zinv);
         fe_to_bytes(out[i], y);
-        if (i != 0) inv = fe_mul(inv, z[i]);
+        if (i != 0) inv = fe_mul(inv, z_[i]);
     }
     consumed_ += n;
 }

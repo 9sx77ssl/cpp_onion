@@ -5,6 +5,7 @@
 #include <array>
 #include <cstddef>
 #include <span>
+#include <vector>
 
 namespace onion::crypto {
 
@@ -38,6 +39,10 @@ private:
     GeP3 cur_;
     GeCached step8b_;
     std::uint64_t consumed_ = 0;
+    // Reusable per-batch scratch (design §10: no hot-path allocation). Sized on
+    // the first batch; later batches reuse. Only Y and Z are kept per candidate
+    // (design §5), not the full point.
+    std::vector<Fe> ys_, z_, prefix_;
 };
 
 }  // namespace onion::crypto
