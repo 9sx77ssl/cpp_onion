@@ -18,3 +18,9 @@ catch_discover_tests(onion_tests)
 
 add_test(NAME oracle_self_test
          COMMAND python3 ${CMAKE_SOURCE_DIR}/tools/verify_onion.py --self-test)
+
+add_test(NAME e2e_search_and_oracle
+         COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/e2e/run_e2e.sh
+                 $<TARGET_FILE:onion>
+                 ${CMAKE_SOURCE_DIR}/tools/verify_onion.py)
+set_tests_properties(e2e_search_and_oracle PROPERTIES TIMEOUT 120)
