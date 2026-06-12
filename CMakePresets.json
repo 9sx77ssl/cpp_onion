@@ -1,0 +1,30 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "debug",
+      "binaryDir": "build/debug",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "ONION_NATIVE": "OFF" }
+    },
+    {
+      "name": "release",
+      "binaryDir": "build/release",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "ONION_NATIVE": "ON" }
+    },
+    {
+      "name": "asan",
+      "binaryDir": "build/asan",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "ONION_NATIVE": "OFF", "ONION_SANITIZE": "ON" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "debug", "configurePreset": "debug" },
+    { "name": "release", "configurePreset": "release" },
+    { "name": "asan", "configurePreset": "asan" }
+  ],
+  "testPresets": [
+    { "name": "debug", "configurePreset": "debug", "output": { "outputOnFailure": true } },
+    { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
+    { "name": "asan", "configurePreset": "asan", "output": { "outputOnFailure": true } }
+  ]
+}
