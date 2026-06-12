@@ -8,8 +8,10 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <cerrno>
 #include <string>
 #include <string_view>
+#include <span>
 
 namespace fs = std::filesystem;
 
@@ -51,10 +53,16 @@ write_tor_keys(const VerifiedResult& result, const fs::path& outdir) {
     const fs::path dir = outdir / addr56;
 
     std::error_code ec;
-    fs::create_directories(dir, ec);
-    if (ec) return std::unexpected(WriteError::create_dir_failed);
-    fs::permissions(dir, fs::perms::owner_all, fs::perm_options::replace, ec);
-    if (ec) return std::unexpected(WriteError::create_dir_failed);
+    // Create parent components first (they hold no secrets), then create the
+    // leaf result directory atomically with mode 0700. Doing the leaf via
+    // create_directories + a later chmod would leave a brief window where it
+    // exists with umask-default (group/other-readable) permissions.
+    if (!outdir.empty()) {
+        fs::create_directories(outdir, ec);
+        if (ec) return std::unexpected(WriteError::create_dir_failed);
+    }
+    if (::mkdir(dir.c_str(), 0700) != 0 && errno != EEXIST)
+        return std::unexpected(WriteError::create_dir_failed);
 
     // hostname
     const std::string hostname = result.address.to_string() + "\n";

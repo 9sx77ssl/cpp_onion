@@ -92,6 +92,8 @@ TEST_CASE("writer emits Tor-format files with exact bytes and 0700/0600 permissi
         REQUIRE(bytes.size() == 64);
         constexpr std::string_view tag = "== ed25519v1-public: type0 ==";
         CHECK(std::memcmp(bytes.data(), tag.data(), tag.size()) == 0);
+        for (std::size_t i = tag.size(); i < 32; ++i)
+            CHECK(bytes[i] == std::byte{0});
         CHECK(std::memcmp(bytes.data() + 32, verified->pubkey.data(), 32) == 0);
     }
 
@@ -112,6 +114,8 @@ TEST_CASE("writer refuses to overwrite an existing result") {
 
     const auto outdir = make_temp_dir();
     REQUIRE(io::write_tor_keys(*verified, outdir).has_value());
-    CHECK_FALSE(io::write_tor_keys(*verified, outdir).has_value());  // O_EXCL
+    const auto second = io::write_tor_keys(*verified, outdir);
+    REQUIRE_FALSE(second.has_value());
+    CHECK(second.error() == io::WriteError::open_failed);  // O_EXCL on hostname
     fs::remove_all(outdir);
 }
