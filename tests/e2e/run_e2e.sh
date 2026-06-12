@@ -9,7 +9,7 @@ OUT="$(mktemp -d)"
 trap 'rm -rf "$OUT"' EXIT
 
 # 2-char prefix: ~1024 expected tries — the Phase 0 exit gate (design doc §22)
-"$BIN" ab --count 1 --threads 2 --out "$OUT" --quiet
+"$BIN" ab --count 1 --threads 2 --out "$OUT" --quiet --engine incremental
 
 DIR="$(find "$OUT" -mindepth 1 -maxdepth 1 -type d | head -n1)"
 test -n "$DIR" || { echo "FAIL: no result directory produced"; exit 1; }

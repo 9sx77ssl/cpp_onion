@@ -1,4 +1,5 @@
 #include "core/matcher.hpp"
+#include "engine/cpu/incremental_engine.hpp"
 #include "engine/cpu/naive_engine.hpp"
 #include "io/tor_key_writer.hpp"
 #include "io/verifier.hpp"
@@ -13,6 +14,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <limits>
+#include <memory>
 #include <print>
 #include <stop_token>
 #include <thread>
@@ -38,6 +40,10 @@ int main(int argc, char** argv) {
     app.add_option("-t,--threads", threads, "worker threads");
     app.add_option("-n,--count", count, "number of keys to find before exiting");
     app.add_flag("-q,--quiet", quiet, "suppress progress output");
+    std::string engine_name = "incremental";
+    double bench_seconds = 0.0;
+    app.add_option("--engine", engine_name, "engine: incremental (default) or naive");
+    app.add_option("--bench", bench_seconds, "benchmark: run N seconds against an impossible prefix, report keys/s");
     CLI11_PARSE(app, argc, argv);
     threads = std::max(1u, threads);
 
@@ -59,14 +65,28 @@ int main(int argc, char** argv) {
 
     onion::engine::ResultQueue queue;
     onion::engine::StatsBoard stats(threads);
-    onion::engine::NaiveCpuEngine engine(patterns, threads, queue, stats);
+    std::unique_ptr<onion::engine::IEngine> engine;
+    if (engine_name == "naive")
+        engine = std::make_unique<onion::engine::NaiveCpuEngine>(patterns, threads, queue, stats);
+    else
+        engine = std::make_unique<onion::engine::IncrementalCpuEngine>(patterns, threads, queue, stats);
 
     std::signal(SIGINT, on_sigint);
     std::stop_source stop;
-    std::jthread runner([&] { engine.run(stop.get_token()); });
+    std::jthread runner([&] { engine->run(stop.get_token()); });
 
     using clock = std::chrono::steady_clock;
     const auto start = clock::now();
+
+    if (bench_seconds > 0.0) {
+        std::this_thread::sleep_for(std::chrono::duration<double>(bench_seconds));
+        const double secs = std::chrono::duration<double>(clock::now() - start).count();
+        std::println("bench: {:.2f} M keys/s ({} candidates in {:.1f}s, {} threads, {})",
+                     double(stats.total()) / secs / 1e6, stats.total(), secs, threads, engine_name);
+        stop.request_stop();
+        return 0;
+    }
+
     std::size_t found = 0;
     int exit_code = 0;
 
