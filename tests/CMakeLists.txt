@@ -15,3 +15,6 @@ add_executable(onion_tests
 target_link_libraries(onion_tests PRIVATE Catch2::Catch2WithMain onion_options Threads::Threads
   onion_crypto onion_core onion_engine onion_engine_cpu onion_io)
 catch_discover_tests(onion_tests)
+
+add_test(NAME oracle_self_test
+         COMMAND python3 ${CMAKE_SOURCE_DIR}/tools/verify_onion.py --self-test)
