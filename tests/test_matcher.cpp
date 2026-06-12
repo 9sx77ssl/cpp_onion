@@ -39,8 +39,8 @@ TEST_CASE("matches agrees with naive encode-then-compare reference") {
         for (auto& b : pk) b = std::byte(rng() & 0xff);
         const std::string addr{onion_address_from_pubkey(pk).view()};
 
-        // True prefixes of this address must match, for every length 1..12
-        const std::size_t len = 1 + trial % 12;
+        // True prefixes of this address must match, for every length 1..49
+        const std::size_t len = 1 + trial % 49;
         const auto pat = compile_prefix(addr.substr(0, len));
         REQUIRE(pat.has_value());
         CHECK(matches(*pat, pk));
