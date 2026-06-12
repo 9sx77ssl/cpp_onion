@@ -41,6 +41,8 @@ pubkey_from_onion_address(std::string_view address) {
     if (address.ends_with(".onion")) address.remove_suffix(6);
     if (address.size() != 56) return std::unexpected(AddressError::bad_length);
 
+    // A well-formed 56-char base32 body decodes to exactly 280 bits = 35 bytes;
+    // the size check is belt-and-suspenders against a decoder regression.
     const auto decoded = base32_decode(address);
     if (!decoded || decoded->size() != 35)
         return std::unexpected(AddressError::bad_base32);

@@ -4,6 +4,8 @@
 #include <array>
 #include <cstddef>
 #include <random>
+#include <string>
+#include <string_view>
 
 namespace {
 std::array<std::byte, 32> make_pubkey(unsigned char fill) {
@@ -51,5 +53,23 @@ TEST_CASE("address decode recovers pubkey and validates checksum") {
     // Corrupt one address character -> checksum failure
     auto bad = addr;
     bad[3] = (bad[3] == 'a') ? 'b' : 'a';
-    CHECK_FALSE(pubkey_from_onion_address(bad).has_value());
+    auto corrupted = pubkey_from_onion_address(bad);
+    CHECK_FALSE(corrupted.has_value());
+    CHECK(corrupted.error() == onion::core::AddressError::bad_checksum);
+
+    using onion::core::AddressError;
+    // bad_length: not 56 chars
+    {
+        auto r = pubkey_from_onion_address(std::string_view{addr}.substr(0, 55));
+        REQUIRE_FALSE(r.has_value());
+        CHECK(r.error() == AddressError::bad_length);
+    }
+    // bad_base32: 56 chars but contains a non-alphabet character ('1')
+    {
+        auto bad32 = addr.substr(0, 56);
+        bad32[0] = '1';
+        auto r = pubkey_from_onion_address(bad32);
+        REQUIRE_FALSE(r.has_value());
+        CHECK(r.error() == AddressError::bad_base32);
+    }
 }

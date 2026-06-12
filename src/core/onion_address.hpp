@@ -17,6 +17,7 @@ struct OnionAddress {
     [[nodiscard]] std::string to_string() const {
         return std::string(chars.data(), chars.size()) + ".onion";
     }
+    // The 56-char base32 body, without the ".onion" suffix.
     [[nodiscard]] std::string_view view() const {
         return {chars.data(), chars.size()};
     }
