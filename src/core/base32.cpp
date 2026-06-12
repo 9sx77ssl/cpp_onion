@@ -22,6 +22,13 @@ std::string base32_encode(std::span<const std::byte> in) {
 }
 
 std::expected<std::vector<std::byte>, Base32Error> base32_decode(std::string_view s) {
+    // RFC 4648 unpadded base32 lengths satisfy size % 8 in {0,2,4,5,7};
+    // {1,3,6} are structurally impossible (would need fractional bytes).
+    static constexpr bool kValidMod8[8] = {true, false, true, false,
+                                           true, true, false, true};
+    if (!kValidMod8[s.size() % 8])
+        return std::unexpected(Base32Error::invalid_length);
+
     std::vector<std::byte> out;
     out.reserve(s.size() * 5 / 8);
     std::uint32_t acc = 0;

@@ -36,4 +36,8 @@ TEST_CASE("base32 decode round-trips and rejects junk") {
     CHECK_FALSE(base32_decode("mzx w").has_value());   // whitespace rejected
     CHECK_FALSE(base32_decode("mzxw1").has_value());   // '1' not in alphabet
     CHECK_FALSE(base32_decode("mz======").has_value()); // padding chars rejected
+
+    CHECK_FALSE(base32_decode("a").has_value());        // length 1 mod 8 = 1
+    CHECK_FALSE(base32_decode("aaa").has_value());      // length 3 mod 8 = 3
+    CHECK_FALSE(base32_decode("aaaaaa").has_value());   // length 6 mod 8 = 6
 }
