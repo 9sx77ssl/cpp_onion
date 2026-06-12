@@ -39,20 +39,27 @@ public:
 
     [[nodiscard]] std::uint64_t total() const noexcept {
         std::uint64_t sum = 0;
-        for (const auto& slot : slots_)
-            // atomic_ref requires a mutable lvalue; the underlying object is
-            // never actually written through this path.
-            sum += std::atomic_ref<std::uint64_t>(
-                       const_cast<std::uint64_t&>(slot.value))
+        for (auto& slot : slots_)  // slots_ is mutable: no const_cast needed
+            sum += std::atomic_ref<std::uint64_t>(slot.value)
                        .load(std::memory_order_relaxed);
         return sum;
     }
 
 private:
+    // Cache-line padded so each worker's counter sits on its own line
+    // (no false sharing). The -Winterference-size ABI caveat does not apply:
+    // this is one binary with one set of flags, never shared across DSOs.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winterference-size"
+#endif
     struct alignas(std::hardware_destructive_interference_size) Slot {
         std::uint64_t value = 0;
     };
-    std::vector<Slot> slots_;
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+    mutable std::vector<Slot> slots_;
 };
 
 // Mutex+condvar MPSC queue. Matches are rare (minutes-to-hours apart);
