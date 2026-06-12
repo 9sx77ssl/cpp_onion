@@ -57,3 +57,13 @@ TEST_CASE("verifier rejects a candidate that does not match its pattern") {
     REQUIRE_FALSE(result.has_value());
     CHECK(result.error() == io::VerifyError::pattern_mismatch);
 }
+
+TEST_CASE("verifier rejects an out-of-range pattern index") {
+    using namespace onion;
+    std::vector patterns{*core::compile_prefix("2")};
+    auto cand = test1_candidate();
+    cand.pattern_index = 5;  // only index 0 exists
+    const auto result = io::verify(cand, patterns);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == io::VerifyError::bad_pattern_index);
+}

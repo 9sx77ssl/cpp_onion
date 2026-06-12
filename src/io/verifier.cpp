@@ -2,8 +2,6 @@
 
 #include "crypto/keys.hpp"
 
-#include <string_view>
-
 namespace onion::io {
 
 std::expected<VerifiedResult, VerifyError>
