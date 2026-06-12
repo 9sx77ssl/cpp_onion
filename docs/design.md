@@ -131,7 +131,7 @@ cpp_onion/
     └── verify_onion.py       # independent Python oracle (pure-python ed25519 + sha3)
 ```
 
-Each `src/` subdirectory is a separate CMake library with explicit dependency edges (`onion_engine_cpu → onion_crypto → onion_core`). Rationale: enforces layering (CUDA can't leak into core), gives per-library test binaries, and keeps TUs small for fast incremental builds. Single-header "unity" style rejected — it hides coupling and slows iteration.
+Each `src/` subdirectory is a separate CMake library with explicit dependency edges (`onion_engine_cpu → onion_core → onion_crypto`). Rationale: enforces layering (CUDA can't leak into core), gives per-library test binaries, and keeps TUs small for fast incremental builds. Single-header "unity" style rejected — it hides coupling and slows iteration.
 
 ## 4. Dependencies — choices and rationale
 

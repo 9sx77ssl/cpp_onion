@@ -67,3 +67,19 @@ TEST_CASE("verifier rejects an out-of-range pattern index") {
     REQUIRE_FALSE(result.has_value());
     CHECK(result.error() == io::VerifyError::bad_pattern_index);
 }
+
+TEST_CASE("verifier rejects when address prefix disagrees with pattern string") {
+    using namespace onion;
+    // A pattern that matches ANY pubkey (zero bytes checked) but whose prefix
+    // string is something the real address will not start with. This exercises
+    // the address_prefix_mismatch defense-in-depth branch.
+    core::CompiledPattern bogus{};
+    bogus.nbytes = 0;             // matches() checks no bytes -> always true
+    bogus.prefix = "zzzzzz";      // TEST1 address starts with "25nj..."
+    std::vector patterns{bogus};
+
+    auto cand = test1_candidate();
+    const auto result = io::verify(cand, patterns);
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == io::VerifyError::address_prefix_mismatch);
+}

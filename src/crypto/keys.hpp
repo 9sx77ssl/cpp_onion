@@ -17,8 +17,16 @@ struct ExpandedSecretKey {
     ExpandedSecretKey() = default;
     ExpandedSecretKey(const ExpandedSecretKey&) = default;
     ExpandedSecretKey& operator=(const ExpandedSecretKey&) = default;
-    ExpandedSecretKey(ExpandedSecretKey&&) = default;
-    ExpandedSecretKey& operator=(ExpandedSecretKey&&) = default;
+    ExpandedSecretKey(ExpandedSecretKey&& o) noexcept
+        : scalar(o.scalar), prf_prefix(o.prf_prefix) { o.wipe(); }
+    ExpandedSecretKey& operator=(ExpandedSecretKey&& o) noexcept {
+        if (this != &o) {
+            scalar = o.scalar;
+            prf_prefix = o.prf_prefix;
+            o.wipe();
+        }
+        return *this;
+    }
     ~ExpandedSecretKey() { wipe(); }
 
     void wipe() noexcept;
