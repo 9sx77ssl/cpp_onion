@@ -17,6 +17,8 @@ struct ExpandedSecretKey {
     ExpandedSecretKey() = default;
     ExpandedSecretKey(const ExpandedSecretKey&) = default;
     ExpandedSecretKey& operator=(const ExpandedSecretKey&) = default;
+    ExpandedSecretKey(ExpandedSecretKey&&) = default;
+    ExpandedSecretKey& operator=(ExpandedSecretKey&&) = default;
     ~ExpandedSecretKey() { wipe(); }
 
     void wipe() noexcept;

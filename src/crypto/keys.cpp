@@ -22,7 +22,7 @@ void ExpandedSecretKey::wipe() noexcept {
 
 ExpandedSecretKey expand_seed(std::span<const std::byte, 32> seed) {
     ensure_sodium();
-    std::array<std::byte, 64> h;
+    std::array<std::byte, 64> h{};
     crypto_hash_sha512(reinterpret_cast<unsigned char*>(h.data()),
                        reinterpret_cast<const unsigned char*>(seed.data()),
                        seed.size());
