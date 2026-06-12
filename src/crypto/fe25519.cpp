@@ -4,7 +4,7 @@ namespace onion::crypto {
 namespace {
 
 using u64 = std::uint64_t;
-using u128 = unsigned __int128;
+__extension__ typedef unsigned __int128 u128;
 constexpr u64 M = (u64{1} << 51) - 1;  // reduce_mask_51
 
 u64 load64(std::span<const std::byte, 32> s, std::size_t off) {
