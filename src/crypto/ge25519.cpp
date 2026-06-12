@@ -39,38 +39,19 @@ GeP3 ge_add(const GeP3& p, const GeCached& q) {
     return {fe_mul(e, f), fe_mul(g, h), fe_mul(f, g), fe_mul(e, h)};
 }
 
-// Single-pass carry reduction: propagates borrows and reduces limbs to ≤ M+O(1).
-// Required before fe_mul when an intermediate value has limbs up to ~9*(2^51-1)
-// (produced by fe_sub when both operands have near-maximal limbs, e.g. when the
-// accumulator represents identity in bias-limb form after repeated doublings).
-static Fe fe_carry1(const Fe& a) {
-    using u64 = std::uint64_t;
-    constexpr u64 Mask = (u64{1} << 51) - 1;
-    u64 t0 = a.v[0], t1 = a.v[1], t2 = a.v[2], t3 = a.v[3], t4 = a.v[4];
-    t1 += t0 >> 51; t0 &= Mask;
-    t2 += t1 >> 51; t1 &= Mask;
-    t3 += t2 >> 51; t2 &= Mask;
-    t4 += t3 >> 51; t3 &= Mask;
-    t0 += 19 * (t4 >> 51); t4 &= Mask;
-    t1 += t0 >> 51; t0 &= Mask;   // one extra pass for the *19 carry
-    return {{t0, t1, t2, t3, t4}};
-}
-
-// r = 2p. Standard ext-coords doubling.
-// Formula: A=X^2, B=Y^2, C=2*Z^2, H=A+B, E=H-(X+Y)^2, G=A-B, F=C+G.
-// X3=E*F, Y3=G*H, Z3=F*G, T3=E*H.
-//
-// G = fe_sub(A,B) has limbs up to ~9*(2^51-1) when A≈B≈M (identity bias-limb
-// form). fe_add(C, G) would then produce limbs >threshold for fe_mul. Fix:
-// carry-reduce G first so its limbs are ≤ M+O(1), then F = C+G_reduced ≤ 3M.
+// r = 2p. Extended-coordinate doubling (dbl-2008-hwcd, a=-1). The sign flips
+// vs the textbook (E=H-(X+Y)^2 = -E_std, G=A-B = -G_std, etc.) cancel in every
+// output product, so this matches the standard doubling. fe_sub now returns
+// reduced limbs, so all fe_mul inputs are safely bounded.
+// Outputs: X3=E*F, Y3=G*H, Z3=F*G, T3=E*H.
 GeP3 ge_double(const GeP3& p) {
-    Fe A    = fe_sq(p.X);
-    Fe B    = fe_sq(p.Y);
-    Fe C    = fe_add(fe_sq(p.Z), fe_sq(p.Z));     // 2*Z^2
-    Fe H    = fe_add(A, B);                        // A + B
-    Fe E    = fe_sub(H, fe_sq(fe_add(p.X, p.Y))); // H - (X+Y)^2
-    Fe G    = fe_carry1(fe_sub(A, B));             // A - B, carry-reduced
-    Fe F    = fe_add(C, G);                        // C + G, safe: C≤2M, G≤M+O(1)
+    Fe A = fe_sq(p.X);
+    Fe B = fe_sq(p.Y);
+    Fe C = fe_add(fe_sq(p.Z), fe_sq(p.Z));     // 2*Z^2
+    Fe H = fe_add(A, B);                        // A + B
+    Fe E = fe_sub(H, fe_sq(fe_add(p.X, p.Y))); // H - (X+Y)^2
+    Fe G = fe_sub(A, B);                        // A - B
+    Fe F = fe_add(C, G);                        // C + G
     return {fe_mul(E, F), fe_mul(G, H), fe_mul(F, G), fe_mul(E, H)};
 }
 

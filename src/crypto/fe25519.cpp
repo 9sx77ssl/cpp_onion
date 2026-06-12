@@ -63,14 +63,25 @@ Fe fe_add(const Fe& a, const Fe& b) {
 }
 
 Fe fe_sub(const Fe& a, const Fe& b) {
-    // bias by 8p so the result stays non-negative; outputs feed straight into fe_mul.
+    // bias by 8p so the result stays non-negative, then carry-reduce so the
+    // output limbs are <= M+epsilon. The reduction is essential: without it a
+    // fe_sub result has limbs ~2^54 and, in the worst case (a bias-form zero
+    // such as fe_sub(1,1)), overflows fe_mul's `o0 += c*19` u64 step — which
+    // silently drifts the identity point over repeated doublings.
     constexpr u64 two54m152 = (u64{1} << 54) - 152;  // 8*(2^51-19)
     constexpr u64 two54m8 = (u64{1} << 54) - 8;      // 8*(2^51-1)
-    Fe r = {{a.v[0] + two54m152 - b.v[0],
-             a.v[1] + two54m8 - b.v[1],
-             a.v[2] + two54m8 - b.v[2],
-             a.v[3] + two54m8 - b.v[3],
-             a.v[4] + two54m8 - b.v[4]}};
+    u64 t0 = a.v[0] + two54m152 - b.v[0];
+    u64 t1 = a.v[1] + two54m8 - b.v[1];
+    u64 t2 = a.v[2] + two54m8 - b.v[2];
+    u64 t3 = a.v[3] + two54m8 - b.v[3];
+    u64 t4 = a.v[4] + two54m8 - b.v[4];
+    t1 += t0 >> 51; t0 &= M;
+    t2 += t1 >> 51; t1 &= M;
+    t3 += t2 >> 51; t2 &= M;
+    t4 += t3 >> 51; t3 &= M;
+    t0 += 19 * (t4 >> 51); t4 &= M;
+    t1 += t0 >> 51; t0 &= M;
+    Fe r = {{t0, t1, t2, t3, t4}};
     return r;
 }
 
