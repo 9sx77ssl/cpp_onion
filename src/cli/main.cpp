@@ -1,5 +1,6 @@
 #include "core/matcher.hpp"
 #include "engine/cpu/incremental_engine.hpp"
+#include "engine/cpu/incremental_engine_x4.hpp"
 #include "engine/cpu/naive_engine.hpp"
 #include "io/tor_key_writer.hpp"
 #include "io/verifier.hpp"
@@ -41,9 +42,11 @@ int main(int argc, char** argv) {
     app.add_option("-n,--count", count, "number of keys to find before exiting");
     app.add_flag("-q,--quiet", quiet, "suppress progress output");
     std::string engine_name = "incremental";
+    std::string simd_mode = "auto";  // auto|on -> x4; off -> scalar
     double bench_seconds = 0.0;
     std::size_t batch = 1024;
     app.add_option("--engine", engine_name, "engine: incremental (default) or naive");
+    app.add_option("--simd", simd_mode, "SIMD mode: auto (default), on, or off; selects AVX2 4-wide engine when on/auto");
     app.add_option("--bench", bench_seconds, "benchmark: run N seconds against an impossible prefix, report keys/s");
     app.add_option("--batch", batch, "incremental engine batch size (default 1024)");
     CLI11_PARSE(app, argc, argv);
@@ -68,8 +71,13 @@ int main(int argc, char** argv) {
     onion::engine::ResultQueue queue;
     onion::engine::StatsBoard stats(threads);
     std::unique_ptr<onion::engine::IEngine> engine;
+    // Determine which incremental variant to use.
+    // --engine naive always wins; otherwise --simd auto/on selects the x4 engine.
+    const bool use_x4 = (engine_name != "naive") && (simd_mode == "auto" || simd_mode == "on");
     if (engine_name == "naive")
         engine = std::make_unique<onion::engine::NaiveCpuEngine>(patterns, threads, queue, stats);
+    else if (use_x4)
+        engine = std::make_unique<onion::engine::IncrementalCpuEngineX4>(patterns, threads, queue, stats, batch);
     else
         engine = std::make_unique<onion::engine::IncrementalCpuEngine>(patterns, threads, queue, stats, batch);
 
@@ -83,8 +91,11 @@ int main(int argc, char** argv) {
     if (bench_seconds > 0.0) {
         std::this_thread::sleep_for(std::chrono::duration<double>(bench_seconds));
         const double secs = std::chrono::duration<double>(clock::now() - start).count();
+        const std::string variant = (engine_name == "naive") ? "naive"
+                                    : use_x4 ? "incremental+avx2x4"
+                                             : "incremental";
         std::println("bench: {:.2f} M keys/s ({} candidates in {:.1f}s, {} threads, {})",
-                     double(stats.total()) / secs / 1e6, stats.total(), secs, threads, engine_name);
+                     double(stats.total()) / secs / 1e6, stats.total(), secs, threads, variant);
         stop.request_stop();
         return 0;
     }
