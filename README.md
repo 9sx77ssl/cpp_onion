@@ -31,19 +31,22 @@ Benchmarked on an AMD Ryzen 5 4600H (Zen 2, 6C/12T):
 | Engine | Flags | Threads | Keys/s |
 |---|---|---|---|
 | naive (libsodium per candidate) | | 12 | ~0.34 M/s |
-| **incremental** (`A+=8B` + batched inversion) | `--simd off` | 12 | **~23.8 M/s** |
-| **incremental + AVX2 4-wide** (Fe4 SoA, 4 lanes) | `--simd on` | 12 | **~21.3 M/s** |
+| **incremental** (`A+=8B` + batched inversion) — **default** | | 12 | **~24–27 M/s** |
+| incremental + AVX2 4-wide (Fe4 SoA, 4 lanes) | `--simd on` | 12 | ~21 M/s |
 
-The AVX2 4-wide (`--simd on`, default) path exercises 4 independent lanes per
-step via __m256i field arithmetic; on Zen 2 the 256-bit execution units are two
-fused 128-bit µops, so the theoretical 4× SIMD gain is offset by register
-pressure — the measured result is within noise of the scalar engine on this
-microarchitecture. Both engines produce bit-exact keys validated by libsodium
-and the independent Python oracle (`tools/verify_onion.py`).
+~70–80× the naive baseline (hardware/thermal dependent). Both engines produce
+bit-exact keys validated by libsodium and the independent Python oracle
+(`tools/verify_onion.py`).
 
-~70× the naive baseline (hardware/thermal dependent). Search cost scales as
-`32^L` for an `L`-char prefix: ≤6 chars is seconds, 7 is ~minutes, 8 is hours.
-The next big lever is a CUDA backend (the design targets ~10⁹ keys/s on a GPU).
+The default is the scalar incremental engine. An AVX2 4-wide path (`--simd on`)
+processes 4 independent lanes per step via `__m256i` field arithmetic — but on
+**Zen 2** the 256-bit units are two fused 128-bit µops and a 4-lane point spills
+the register file, so it measures *slower* than scalar here; it's kept for
+microarchitectures with full 256-bit throughput (Zen 4+, Intel AVX-512-class).
+
+Search cost scales as `32^L` for an `L`-char prefix: ≤6 chars is seconds, 7 is
+~minutes, 8 is hours. **The real next lever is the CUDA backend** — this machine
+has a GTX 1650, and the design targets ~10⁹ keys/s on a GPU.
 
 ## Build
 

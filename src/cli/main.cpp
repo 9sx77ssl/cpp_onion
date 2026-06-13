@@ -42,11 +42,11 @@ int main(int argc, char** argv) {
     app.add_option("-n,--count", count, "number of keys to find before exiting");
     app.add_flag("-q,--quiet", quiet, "suppress progress output");
     std::string engine_name = "incremental";
-    std::string simd_mode = "auto";  // auto|on -> x4; off -> scalar
+    std::string simd_mode = "auto";  // auto -> fastest on this CPU (scalar on Zen 2); on -> force AVX2 x4
     double bench_seconds = 0.0;
     std::size_t batch = 1024;
     app.add_option("--engine", engine_name, "engine: incremental (default) or naive");
-    app.add_option("--simd", simd_mode, "SIMD mode: auto (default), on, or off; selects AVX2 4-wide engine when on/auto");
+    app.add_option("--simd", simd_mode, "AVX2 4-wide engine: on | off | auto (default). NOTE: 4-wide is slower than scalar on Zen 2 (2x128 AVX2 + register spills), so auto uses the scalar engine here; --simd on forces x4 (wins on Zen 4+/Intel AVX-512-class cores)");
     app.add_option("--bench", bench_seconds, "benchmark: run N seconds against an impossible prefix, report keys/s");
     app.add_option("--batch", batch, "incremental engine batch size (default 1024)");
     CLI11_PARSE(app, argc, argv);
@@ -72,8 +72,9 @@ int main(int argc, char** argv) {
     onion::engine::StatsBoard stats(threads);
     std::unique_ptr<onion::engine::IEngine> engine;
     // Determine which incremental variant to use.
-    // --engine naive always wins; otherwise --simd auto/on selects the x4 engine.
-    const bool use_x4 = (engine_name != "naive") && (simd_mode == "auto" || simd_mode == "on");
+    // --engine naive always wins; otherwise only --simd on forces the x4 engine.
+    // auto/off use the scalar engine because 4-wide AVX2 measured SLOWER on Zen 2.
+    const bool use_x4 = (engine_name != "naive") && (simd_mode == "on");
     if (engine_name == "naive")
         engine = std::make_unique<onion::engine::NaiveCpuEngine>(patterns, threads, queue, stats);
     else if (use_x4)
