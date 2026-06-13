@@ -22,10 +22,27 @@ namespace onion::cuda {
 // old 3-array (ys[]/zs[]/prefix[]) scheme. With the 32-bit field (Fe=32 B) that
 // cuts the stack frame from ~96 KB to ~64 KB/thread (2 * M * 32 B), reducing
 // local-memory traffic ~33% for a measured +~7% (302 -> 323 M keys/s) on the
-// GTX 1650 at T=2^15. The runtime reservation at T=2^15 fits the 4 GB card. The
-// curve is knee-flattening (768->1024 is only ~3%) and beyond 1024 the
-// reservation approaches VRAM with negligible gain, so 1024 is the robust knee.
-inline constexpr int kStepsPerThread = 1024;
+// GTX 1650 at T=2^15.
+//
+// The smaller 2-array footprint moved the knee UPWARD: with only 2*M*32 B/thread
+// of local scratch, larger M keeps amortizing the single fed_invert without yet
+// exhausting VRAM. Re-swept on the GTX 1650 at T=2^15 (median of 3, --bench 8):
+// M=512->287, 768->308, 1024->323, 1536->327, 2048->336, 3072->340 M keys/s;
+// M=4096 OVERFLOWS the local reservation (every kernel launch fails -> 0 keys),
+// so it is the hard ceiling. M=3072 is the fastest that still launches: peak
+// ~2.83 GB / 4 GB at T=2^15 (1.26 GB headroom) and 56/56 tests incl. the
+// libsodium device-chain xval stay green. The 2048->3072 gain is only ~1.3% as
+// the inversion is already deeply amortized, so 3072 is the robust knee just
+// under the VRAM cliff.
+//
+// M is overridable at compile time via -DONION_CUDA_M=<value> (CMake cache var
+// ONION_CUDA_M; 0 keeps this header default). The override only changes this
+// constant, so both the kernel array sizes/loop bounds and the host per_launch
+// accounting track it -- handy for re-sweeping if the field layout or T change.
+#ifndef ONION_CUDA_M
+#define ONION_CUDA_M 3072
+#endif
+inline constexpr int kStepsPerThread = ONION_CUDA_M;
 
 // Max compiled patterns held in __constant__ memory (broadcast to all threads).
 inline constexpr int kMaxConstPatterns = 16;
