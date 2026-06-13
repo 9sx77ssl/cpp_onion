@@ -72,7 +72,10 @@ __global__ void search_kernel(const GeP3* __restrict__ starts,
     GeP3 cur = starts[t];
     const GeCachedAffine step = *bigstep;
 
-    // Per-thread scratch for the Montgomery batch inversion over M Z-values.
+#ifdef ONION_CUDA_NO_FUSED_COMBO
+    // ---- Legacy 3-array Montgomery batch inversion (ys[], zs[], prefix[]). --
+    // Kept as a fallback for A/B comparison; the default path below stores only
+    // 2 arrays. Compile with -DONION_CUDA_NO_FUSED_COMBO to select this.
     Fe ys[kStepsPerThread];
     Fe zs[kStepsPerThread];
     Fe prefix[kStepsPerThread];
@@ -101,6 +104,51 @@ __global__ void search_kernel(const GeP3* __restrict__ starts,
         match_and_record(y, t, i, slots, hit_count);
         if (i != 0) inv = fed_mul(inv, zs[i]);
     }
+#else
+    // ---- 2-array fused-combo Montgomery batch inversion (DEFAULT). ----------
+    // The classic batch inversion needs three per-element quantities at index i
+    // during back-substitution: Y[i], z[i], and the prefix-exclusive product
+    // pe[i] = z[0]*...*z[i-1]. The old path stored all three (ys[], zs[],
+    // prefix[]). We instead FUSE Y[i] into the prefix during the forward pass:
+    //
+    //   combo[i] = Y[i] * pe[i]        (one fed_mul, pe carried in a register)
+    //
+    // because the recovered point's y is exactly
+    //
+    //   y[i] = Y[i] / z[i] = Y[i] * (run * pe[i]) = run * (Y[i]*pe[i]) = run*combo[i],
+    //
+    // where run = 1/prod(z[0..i]) is the running inverse in back-substitution.
+    // This drops the separate prefix[] array (96 KB -> 64 KB/thread of local
+    // memory) while staying purely multiply-only: no extra fed_invert, and the
+    // forward Y*pe mul replaces the old loop's prefix mul, so the field-op count
+    // is unchanged. The advance run *= z[i] still uses the original z, retained
+    // in zs[]. Verified bit-for-bit against the 3-array path (combo y == ys/zs).
+    Fe combo[kStepsPerThread];
+    Fe zs[kStepsPerThread];
+
+    // pe = prefix-exclusive product prod(z[0..i-1]); pe[0] = 1 (field one).
+    // Built via fed_from_bytes so it is portable across both device fields
+    // (8x32-bit and 5x51-bit), which both encode 1 as the byte 0x01 then zeros.
+    uint8_t one_bytes[32] = {1};
+    Fe pe = fed_from_bytes(one_bytes);
+    #pragma unroll 1
+    for (int j = 0; j < kStepsPerThread; ++j) {
+        combo[j] = fed_mul(cur.Y, pe);  // Y[j] * prod(z[0..j-1])
+        zs[j] = cur.Z;
+        pe = fed_mul(pe, cur.Z);        // include z[j]: pe -> prod(z[0..j])
+        cur = ged_madd(cur, step);
+    }
+    // pe now holds prod(z[0..M-1]).
+    Fe run = fed_invert(pe);  // 1 / prod(z) = 1/prod(z[0..M-1])
+
+    // Back-substitute high->low: y[i] = run*combo[i]; then run *= z[i].
+    #pragma unroll 1
+    for (int i = kStepsPerThread; i-- > 0;) {
+        Fe y = fed_mul(run, combo[i]);
+        match_and_record(y, t, i, slots, hit_count);
+        if (i != 0) run = fed_mul(run, zs[i]);
+    }
+#endif
 }
 
 void launch_search_kernel(const GeP3* d_starts,
