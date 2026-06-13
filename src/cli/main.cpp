@@ -27,33 +27,11 @@
 #include <thread>
 #include <vector>
 
+#include <unistd.h>  // isatty — live progress only on a terminal
+
 namespace {
 volatile std::sig_atomic_t g_interrupted = 0;
 extern "C" void on_sigint(int) { g_interrupted = 1; }
-
-// Humanized count: 12345 -> "12.3K", 1500000 -> "1.5M", 2.0e9 -> "2.0G".
-std::string humanize_count(double n) {
-    static const char* units[] = {"", "K", "M", "G", "T", "P"};
-    int u = 0;
-    while (n >= 1000.0 && u < 5) {
-        n /= 1000.0;
-        ++u;
-    }
-    if (u == 0) return std::format("{}", static_cast<std::uint64_t>(n));
-    return std::format("{:.1f}{}", n, units[u]);
-}
-
-// Humanized rate in keys/s: "25 M/s", "1.2 G/s", "302 M/s".
-std::string humanize_rate(double per_sec) {
-    static const char* units[] = {"/s", " K/s", " M/s", " G/s", " T/s", " P/s"};
-    int u = 0;
-    while (per_sec >= 1000.0 && u < 5) {
-        per_sec /= 1000.0;
-        ++u;
-    }
-    if (per_sec >= 100.0 || u == 0) return std::format("{:.0f}{}", per_sec, units[u]);
-    return std::format("{:.1f}{}", per_sec, units[u]);
-}
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -98,21 +76,17 @@ int main(int argc, char** argv) {
     const double expected_tries = std::pow(32.0, double(shortest));
     const std::string target = (count == 0) ? "∞" : std::format("{}", count);
 
-    // Minimalist startup: banner (the only ^.^) + a single factual status line.
-    // Suppressed entirely under --quiet, and the status line is omitted in --bench.
-    if (!quiet) {
-        std::println("cpp_onion ^.^");
-        if (bench_seconds <= 0.0) {
-            std::string prefix_list;
-            for (std::size_t i = 0; i < prefixes.size(); ++i) {
-                if (i) prefix_list += ", ";
-                prefix_list += prefixes[i];
-            }
-            const std::string engine_label =
-                (engine_name == "cuda") ? "CUDA" : std::format("{} threads", threads);
-            std::println("{} · {} · target {} · ~{:.3g} tries/match", prefix_list,
-                         engine_label, target, expected_tries);
+    // One factual status line (omitted under --quiet and in --bench).
+    if (!quiet && bench_seconds <= 0.0) {
+        std::string prefix_list;
+        for (std::size_t i = 0; i < prefixes.size(); ++i) {
+            if (i) prefix_list += ", ";
+            prefix_list += prefixes[i];
         }
+        const std::string engine_label =
+            (engine_name == "cuda") ? "CUDA" : std::format("{} threads", threads);
+        std::println("{} · {} · target {} · ~{:.3g} tries/match", prefix_list,
+                     engine_label, target, expected_tries);
     }
 
     onion::engine::ResultQueue queue;
@@ -166,6 +140,9 @@ int main(int argc, char** argv) {
     std::size_t found = 0;
     int exit_code = 0;
     const bool infinite = (count == 0);
+    // Live \r progress (with ANSI line-clear) only on a real terminal; when piped
+    // to a file/log we skip it so the log stays plain (just status + found lines).
+    const bool progress = !quiet && ::isatty(STDOUT_FILENO);
 
     while ((infinite || found < count) && !g_interrupted) {
         auto candidate = queue.pop_wait_for(std::chrono::milliseconds(500));
@@ -186,23 +163,22 @@ int main(int argc, char** argv) {
                 exit_code = 3;
                 break;
             }
-            if (!quiet) std::print("\r");  // clear in-progress line before the found line
-            std::println("  found  {}  →  {}", verified->address.to_string(),
-                         dir->string());
+            if (progress) std::print("\r\033[K");  // clear the in-progress line first
+            std::println("found  {}  →  {}", verified->address.to_string(), dir->string());
             ++found;
         }
 
-        if (!quiet) {
+        if (progress) {
             const auto elapsed = std::chrono::duration<double>(clock::now() - start).count();
             const auto total = stats.total();
             const double rate = elapsed > 0 ? double(total) / elapsed : 0.0;
-            std::print("\r{} · {} tried · {:.0f}s · {}/{}   ", humanize_rate(rate),
-                       humanize_count(double(total)), elapsed, found, target);
+            std::print("\r\033[K{:.0f} keys/s · {} tried · {:.1f}s · {}/{}", rate, total,
+                       elapsed, found, target);
             std::fflush(stdout);
         }
     }
 
-    if (!quiet) std::println("");
+    if (progress) std::println("");  // end the live progress line
     stop.request_stop();
     return exit_code;
 }

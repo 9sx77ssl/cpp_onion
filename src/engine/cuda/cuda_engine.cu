@@ -430,9 +430,11 @@ void CudaEngine::run(std::stop_token stop) {
     // epoch, but a break right after an enqueue should still settle first).
     cudaStreamSynchronize(s.stream.get());
 
-    // One-line summary if anything was silently dropped, so a systematic issue
-    // (RNG drift, runaway pattern density, transient GPU errors) cannot hide.
-    if (s.dropped_epoch_errors || s.dropped_degenerate || s.hit_overflow_events) {
+    // One-line summary ONLY on a real, actionable problem (a CUDA error dropped an
+    // epoch, or a degenerate scalar). Hit-slot overflow is benign and expected for
+    // short prefixes (surplus hits are simply re-found next epoch), so it never
+    // prints on its own — that was just noise on normal runs.
+    if (s.dropped_epoch_errors || s.dropped_degenerate) {
         std::fprintf(stderr,
                      "CudaEngine: shutdown stats -- dropped epochs (CUDA errors): "
                      "%llu, degenerate scalars skipped: %llu, hit-slot overflow "
