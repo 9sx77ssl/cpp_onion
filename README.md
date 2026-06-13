@@ -67,6 +67,23 @@ short of the design's optimistic ~10⁹ (that figure assumes a far larger,
 higher-end GPU). The next levers would be a wider/newer GPU or warp-cooperative
 batch inversion to grow the effective chain length.
 
+## Benchmarks vs mkp224o
+
+[mkp224o](https://github.com/cathugger/mkp224o) is the established reference vanity
+onion generator. Head-to-head on the same machine (AMD Ryzen 5 4600H + NVIDIA GTX
+1650), comparing against mkp224o's fastest amd64-51-30k build, both at 12 threads:
+
+| Generator | Backend | Keys/s |
+|---|---|---|
+| mkp224o (amd64-51-30k) | CPU, 12 threads | ~28.9 M/s |
+| cpp_onion incremental | CPU, 12 threads | ~28.1 M/s |
+| cpp_onion CUDA | GPU (GTX 1650) | ~310 M/s (≈ 10.7× mkp224o) |
+
+On CPU cpp_onion is on par with the reference (~28.1 vs ~28.9 M/s); the GPU backend
+is the differentiator, since mkp224o has no GPU backend at all. The ~10.7× here is
+GPU-hardware-bound: hundreds-of-× over mkp224o is achievable on a larger GPU, but on
+this GTX 1650 it's ~11×.
+
 ## Build
 
 Requires GCC 14+ (targets GCC 16), CMake ≥ 3.28, libsodium, Python 3. Uses the

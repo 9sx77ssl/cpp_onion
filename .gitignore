@@ -7,8 +7,12 @@ keys/
 *.onion/
 hs_ed25519_secret_key
 
-# Local tooling / session artifacts
-.claude/
+# Claude config: track committed config (.claude/settings.json, .claude/agents/),
+# ignore session/tooling artifacts.
+.claude/worktrees/
+.claude/projects/
+.claude/**/scripts/
+.claude/*.local.json
 
 # KDE folder metadata
 .directory

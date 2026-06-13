@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(cmake --preset *)",
+      "Bash(cmake --build *)",
+      "Bash(cmake --build --preset *)",
+      "Bash(ctest *)",
+      "Bash(ctest --preset *)",
+      "Bash(compute-sanitizer *)",
+      "Bash(nvidia-smi*)",
+      "Bash(./build/*/src/cli/onion *)",
+      "Bash(./build/src/cli/onion *)",
+      "Bash(python3 tools/verify_onion.py *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)"
+    ]
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"cpp_onion: read CLAUDE.md. Cardinal rule: every field/point/engine/kernel change stays bit-exact vs libsodium (ctest -R xval / incremental) — never weaken a cross-check; every key passes the io::verify firewall before write. Keep 53/53 cpu + 56/56 cuda tests green. Never commit keys/ or device secret material.\"}}'",
+            "statusMessage": "Loading cpp_onion reminder"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "git -C \"${CLAUDE_PROJECT_DIR:-.}\" status --porcelain 2>/dev/null | grep -qE '(src/|tests/)' && echo '{\"systemMessage\":\"cpp_onion: code changed — keep tests green before finishing (ctest --preset debug = 53; ctest --preset cuda = 56) and confirm cross-validation vs libsodium still holds (ctest -R libsodium).\"}' || true"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -277,6 +277,7 @@ The honest summary: this workload's parallelism is so clean that the right amoun
   3. **External baseline:** same machine run of `mkp224o` (its `-s` stats) as the honesty anchor. Target: parity in Phase 2, exceed with IFMA/CUDA phases.
 - **Methodology:** ≥ 5 runs, report median + spread; `cpupower frequency-set` performance governor; record temperature/frequency (`turbostat`) alongside; reject runs with thermal variance > threshold. Compare across commits via a small script over the JSON history — regressions > 3% flag red in review.
 - **GPU:** Nsight-derived achieved-throughput plus the same canonical end-to-end metric; never report kernel-only numbers as system numbers.
+- **mkp224o head-to-head (measured):** same machine (Ryzen 5 4600H + GTX 1650), mkp224o's fastest amd64-51-30k build, 12 threads. mkp224o CPU ~28.9 M keys/s; cpp_onion CPU incremental ~28.1 M keys/s (on par with the reference); cpp_onion CUDA ~310 M keys/s ≈ 10.7× mkp224o. The GPU is the differentiator (mkp224o has no GPU backend); the ~11× is GPU-hardware-bound on this GTX 1650 — hundreds-of-× would need a larger GPU.
 
 ## 15. Profiling strategy
 
