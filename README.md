@@ -34,14 +34,17 @@ sm_75, 14 SMs, 4 GB):
 | naive (libsodium per candidate) | | 12 | ~0.34 M/s |
 | **incremental** (`A+=8B` + batched inversion) — **CPU default** | | 12 | **~25 M/s** |
 | incremental + AVX2 4-wide (Fe4 SoA, 4 lanes) | `--simd on` | 12 | ~21 M/s |
-| **CUDA** (interleaved chains, batched inversion, M=1024) | `--engine cuda` | GPU | **~275 M/s** |
+| **CUDA** (interleaved chains, batched inversion, M=1024, native 32-bit field) | `--engine cuda` | GPU | **~306 M/s** |
 
 The CPU incremental engine is ~70–80× the naive baseline (hardware/thermal
-dependent). The **CUDA backend is ~10.9× the 12-thread CPU incremental engine**
-(274.7 vs 25.3 M keys/s, median of 3 × 8 s runs). All engines produce bit-exact
+dependent). The **CUDA backend is ~12.0× the 12-thread CPU incremental engine**
+(306.2 vs 25.4 M keys/s, median of 3 × 8 s runs). All engines produce bit-exact
 keys validated by libsodium and the independent Python oracle
 (`tools/verify_onion.py`); the GPU device chain is additionally cross-checked
-bit-for-bit against libsodium `base_noclamp(a0 + 8i)` in the test suite.
+bit-for-bit against libsodium `base_noclamp(a0 + 8i)` in the test suite. The GPU
+build is **leak-checked**: `compute-sanitizer --tool memcheck --leak-check full`
+reports **0 bytes leaked / 0 errors** on both the test binary and a real
+generate run (the per-epoch `cudaMalloc`/free loop is RAII-clean).
 
 The default is the scalar incremental engine. An AVX2 4-wide path (`--simd on`)
 processes 4 independent lanes per step via `__m256i` field arithmetic — but on
@@ -53,12 +56,14 @@ Search cost scales as `32^L` for an `L`-char prefix: ≤6 chars is seconds, 7 is
 ~minutes, 8 is hours. The **CUDA backend** (`--engine cuda`) now exists and is
 the fastest engine: each device thread walks one interleaved `A += T·8B` chain
 and amortizes a single field inversion across M=1024 points via a Montgomery
-batch inversion. On the GTX 1650 it sustains ~275 M keys/s — honest and well
+batch inversion. The device field uses **native 8×32-bit limbs** with
+`mul.wide`/`mad.hi` carry chains — Turing has fast 32-bit IMAD and only emulates
+64-bit/`__int128` multiplies, so the 32-bit field cut the kernel from 178 to
+**96 registers/thread with zero spills**, raising occupancy. On the GTX 1650 it
+sustains ~306 M keys/s (up from 275 with the `__int128` field) — honest and well
 short of the design's optimistic ~10⁹ (that figure assumes a far larger,
-higher-end GPU). The kernel is field-arithmetic/local-memory bound at 178
-registers/thread (occupancy is fixed); the next levers would be a wider/newer
-GPU, or shrinking the per-step field-op count and local-memory footprint so M
-can grow further.
+higher-end GPU). The next levers would be a wider/newer GPU or warp-cooperative
+batch inversion to grow the effective chain length.
 
 ## Build
 
