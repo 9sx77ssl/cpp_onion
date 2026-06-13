@@ -27,3 +27,15 @@ set_target_properties(onion_engine_cuda PROPERTIES
 # accepts -std=c++23 and forwards the matching flag to the g++-15 host pass.
 target_compile_options(onion_engine_cuda PRIVATE
   $<$<COMPILE_LANGUAGE:CUDA>:-std=c++23>)
+
+# Device field backend selector. OFF (default) = validated 5x51-bit __int128
+# field (device_field.cuh). ON = native 8x32-bit limb field (device_field32.cuh),
+# the Turing speedup path. The xval gate cross-validates whichever is selected
+# against libsodium bit-for-bit, so a wrong field can never ship.
+option(ONION_CUDA_FIELD32 "Use the native 32-bit limb device field on GPU" ON)
+if(ONION_CUDA_FIELD32)
+  target_compile_definitions(onion_engine_cuda PRIVATE ONION_CUDA_FIELD32)
+  message(STATUS "CUDA device field: native 8x32-bit limbs (ONION_CUDA_FIELD32=ON)")
+else()
+  message(STATUS "CUDA device field: 5x51-bit __int128 (ONION_CUDA_FIELD32=OFF)")
+endif()

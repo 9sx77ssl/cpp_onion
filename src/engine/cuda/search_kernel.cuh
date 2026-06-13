@@ -5,7 +5,7 @@
 // and device_field.cuh layouts). The plain-C++ engine boundary is in
 // cuda_engine.hpp; this header is the .cu <-> .cu seam.
 
-#include "engine/cuda/device_field.cuh"
+#include "engine/cuda/device_field_select.cuh"
 
 #include <cstdint>
 

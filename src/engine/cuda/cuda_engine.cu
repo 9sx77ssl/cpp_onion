@@ -15,7 +15,7 @@
 //      push. The CLI io::verify firewall is the final gate.
 
 #include "engine/cuda/cuda_engine.hpp"
-#include "engine/cuda/device_field.cuh"
+#include "engine/cuda/device_field_select.cuh"
 #include "engine/cuda/search_kernel.cuh"
 
 #include "crypto/ge25519.hpp"
@@ -138,20 +138,8 @@ private:
     cudaStream_t s_ = nullptr;
 };
 
-// Bridge a host crypto::Fe (5x51 limbs) into the device-layout Fe (identical).
-Fe to_device_fe(const onion::crypto::Fe& f) {
-    Fe r;
-    for (int i = 0; i < 5; ++i) r.v[i] = f.v[i];
-    return r;
-}
-
-GeP3 to_device_p3(const onion::crypto::GeP3& p) {
-    return GeP3{to_device_fe(p.X), to_device_fe(p.Y), to_device_fe(p.Z), to_device_fe(p.T)};
-}
-
-GeCachedAffine to_device_cached(const onion::crypto::GeCachedAffine& q) {
-    return GeCachedAffine{to_device_fe(q.YplusX), to_device_fe(q.YminusX), to_device_fe(q.T2d)};
-}
+// Host->device Fe/GeP3/GeCachedAffine bridges live in device_field_select.cuh
+// (they handle both the 51-bit and 32-bit device layouts). Pulled in above.
 
 #define CUDA_OK(expr)                                                        \
     do {                                                                     \
@@ -219,6 +207,15 @@ struct CudaEngine::Impl {
                          patterns.size(), kMaxConstPatterns);
             return false;
         }
+#ifdef ONION_CUDA_FIELD32
+        // The native 32-bit field uses 96 regs/thread (vs 178 for the 51-bit
+        // __int128 field) and a 32-byte Fe (vs 40), so more threads stay
+        // resident AND the per-thread local-memory reservation is smaller. T =
+        // 2^15 measured fastest (~302 M keys/s vs ~290 at 2^14) and its ~3.2 GB
+        // local reservation fits the 4 GB card. Only bump if the caller left
+        // the shared default; env override still wins below.
+        if (knobs.threads == (1 << 14)) knobs.threads = 1 << 15;
+#endif
         // Optional env overrides for tuning sweeps (T and block). Compile-time
         // M lives in search_kernel.cuh. Invalid/absent values keep the defaults.
         if (const char* e = std::getenv("ONION_CUDA_THREADS")) {

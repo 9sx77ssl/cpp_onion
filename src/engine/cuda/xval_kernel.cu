@@ -9,7 +9,7 @@
 // The host test then checks every (chain, i) against
 // crypto_scalarmult_ed25519_base_noclamp(a0 + 8i). Never weaken that gate.
 
-#include "engine/cuda/device_field.cuh"
+#include "engine/cuda/device_field_select.cuh"
 #include "engine/cuda/xval.hpp"
 
 #include "crypto/ge25519.hpp"
@@ -20,14 +20,6 @@
 
 namespace onion::cuda {
 namespace {
-
-// Bridge a host crypto::Fe (5x51 limbs) into a device-layout Fe. Both are
-// std::uint64_t v[5] with identical limb semantics, so this is a plain copy.
-Fe to_device_fe(const onion::crypto::Fe& f) {
-    Fe r;
-    for (int i = 0; i < 5; ++i) r.v[i] = f.v[i];
-    return r;
-}
 
 __global__ void incremental_chain(const GeP3* starts,
                                   const GeCachedAffine* step8b,
@@ -71,14 +63,12 @@ int run_incremental_xval(const uint8_t* a0, uint8_t* out_y, int n_chains, int st
         std::array<std::byte, 32> scalar;
         std::memcpy(scalar.data(), a0 + (size_t)c * 32, 32);
         onion::crypto::GeP3 A0 = ge_scalarmult_base(scalar);
-        h_starts[c] = GeP3{to_device_fe(A0.X), to_device_fe(A0.Y),
-                           to_device_fe(A0.Z), to_device_fe(A0.T)};
+        h_starts[c] = to_device_p3(A0);
     }
     std::array<std::byte, 32> eight{};
     eight[0] = std::byte{8};
     onion::crypto::GeCachedAffine step = ge_to_cached_affine(ge_scalarmult_base(eight));
-    GeCachedAffine h_step{to_device_fe(step.YplusX), to_device_fe(step.YminusX),
-                          to_device_fe(step.T2d)};
+    GeCachedAffine h_step = to_device_cached(step);
 
     // --- Upload, launch, download. ---
     GeP3* d_starts = nullptr;

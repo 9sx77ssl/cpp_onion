@@ -17,7 +17,7 @@
 // the candidate via the validated scalar pubkey path, and pushes it; the CLI's
 // io::verify firewall is the final gate. A bogus hit cannot escape.
 
-#include "engine/cuda/device_field.cuh"
+#include "engine/cuda/device_field_select.cuh"
 #include "engine/cuda/search_kernel.cuh"
 
 namespace onion::cuda {
