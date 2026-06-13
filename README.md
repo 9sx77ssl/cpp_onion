@@ -36,11 +36,11 @@ sm_75, 14 SMs, 4 GB):
 | naive (libsodium per candidate) | | 12 | ~0.34 M/s |
 | **incremental** (`A+=8B` + batched inversion) — **CPU default** | | 12 | **~25 M/s** |
 | incremental + AVX2 4-wide (Fe4 SoA, 4 lanes) | `--simd on` | 12 | ~21 M/s |
-| **CUDA** (interleaved chains, batched inversion, M=1024, native 32-bit field) | `--engine cuda` | GPU | **~306 M/s** |
+| **CUDA** (interleaved chains, batched inversion, fused 2-array M=3072, double-buffered epoch pipeline, native 32-bit field) | `--engine cuda` | GPU | **~390 M/s** |
 
 The CPU incremental engine is ~70–80× the naive baseline (hardware/thermal
-dependent). The **CUDA backend is ~12.0× the 12-thread CPU incremental engine**
-(306.2 vs 25.4 M keys/s, median of 3 × 8 s runs). All engines produce bit-exact
+dependent). The **CUDA backend is ~15.4× the 12-thread CPU incremental engine**
+(390.1 vs 25.4 M keys/s, median of 3 × 8 s runs). All engines produce bit-exact
 keys validated by libsodium and the independent Python oracle
 (`tools/verify_onion.py`); the GPU device chain is additionally cross-checked
 bit-for-bit against libsodium `base_noclamp(a0 + 8i)` in the test suite. The GPU
@@ -57,15 +57,31 @@ microarchitectures with full 256-bit throughput (Zen 4+, Intel AVX-512-class).
 Search cost scales as `32^L` for an `L`-char prefix: ≤6 chars is seconds, 7 is
 ~minutes, 8 is hours. The **CUDA backend** (`--engine cuda`) now exists and is
 the fastest engine: each device thread walks one interleaved `A += T·8B` chain
-and amortizes a single field inversion across M=1024 points via a Montgomery
+and amortizes a single field inversion across M=3072 points via a Montgomery
 batch inversion. The device field uses **native 8×32-bit limbs** with
 `mul.wide`/`mad.hi` carry chains — Turing has fast 32-bit IMAD and only emulates
 64-bit/`__int128` multiplies, so the 32-bit field cut the kernel from 178 to
 **96 registers/thread with zero spills**, raising occupancy. On the GTX 1650 it
-sustains ~306 M keys/s (up from 275 with the `__int128` field) — honest and well
-short of the design's optimistic ~10⁹ (that figure assumes a far larger,
-higher-end GPU). The next levers would be a wider/newer GPU or warp-cooperative
-batch inversion to grow the effective chain length.
+sustains ~390 M keys/s. The kernel is **local-memory-bandwidth bound** (the
+per-thread batch-inversion scratch streams from DRAM-backed local memory), so the
+wins that stuck reduced or hid that traffic: a **fused 2-array batch inversion**
+(drop the redundant `prefix[]` array, 302→323 M/s), a **re-swept steps-per-thread
+knee** (M 1024→3072 amortizes the single inversion further almost for free until
+VRAM runs out, 323→340 M/s), and a **double-buffered epoch pipeline** (overlap the
+host point-add setup + H2D with the running kernel so the GPU never idles between
+epochs, 340→390 M/s). Levers that did *not* help on this card were honestly tried
+and reverted: warp-cooperative inversion (the `__shfl` scan added more field-mul
+work than the local-memory traffic it saved, −46%) and lifting occupancy past
+62.5% (the bus is already saturated, so extra resident warps just contend — 0%).
+
+**This ~390 M/s is the GTX 1650 ceiling for this workload, and the gap to
+multi-Gk/s is hardware, not software.** A Blackwell-class card reaches multi-Gk/s
+because it has ~20–30× the compute of this Turing GTX 1650 (e.g. a friend's
+Blackwell measures ~7 Gk/s; 7 Gk/s ÷ ~24 ≈ our ~310–390 M/s per card). The same
+code scales onto a bigger GPU — `1 Gk/s is simply not reachable on a 14-SM, 4 GB
+GTX 1650`. The remaining algorithmic lever would be a fundamentally smaller
+per-thread inversion footprint, but the bus-bound profile here leaves little to
+extract.
 
 ## Benchmarks vs mkp224o
 
@@ -77,12 +93,12 @@ onion generator. Head-to-head on the same machine (AMD Ryzen 5 4600H + NVIDIA GT
 |---|---|---|
 | mkp224o (amd64-51-30k) | CPU, 12 threads | ~28.9 M/s |
 | cpp_onion incremental | CPU, 12 threads | ~28.1 M/s |
-| cpp_onion CUDA | GPU (GTX 1650) | ~310 M/s (≈ 10.7× mkp224o) |
+| cpp_onion CUDA | GPU (GTX 1650) | ~390 M/s (≈ 13.5× mkp224o) |
 
 On CPU cpp_onion is on par with the reference (~28.1 vs ~28.9 M/s); the GPU backend
-is the differentiator, since mkp224o has no GPU backend at all. The ~10.7× here is
+is the differentiator, since mkp224o has no GPU backend at all. The ~13.5× here is
 GPU-hardware-bound: hundreds-of-× over mkp224o is achievable on a larger GPU, but on
-this GTX 1650 it's ~11×.
+this GTX 1650 it's ~13×.
 
 ## Build
 
