@@ -42,8 +42,10 @@ int main(int argc, char** argv) {
     app.add_flag("-q,--quiet", quiet, "suppress progress output");
     std::string engine_name = "incremental";
     double bench_seconds = 0.0;
+    std::size_t batch = 1024;
     app.add_option("--engine", engine_name, "engine: incremental (default) or naive");
     app.add_option("--bench", bench_seconds, "benchmark: run N seconds against an impossible prefix, report keys/s");
+    app.add_option("--batch", batch, "incremental engine batch size (default 1024)");
     CLI11_PARSE(app, argc, argv);
     threads = std::max(1u, threads);
 
@@ -69,7 +71,7 @@ int main(int argc, char** argv) {
     if (engine_name == "naive")
         engine = std::make_unique<onion::engine::NaiveCpuEngine>(patterns, threads, queue, stats);
     else
-        engine = std::make_unique<onion::engine::IncrementalCpuEngine>(patterns, threads, queue, stats);
+        engine = std::make_unique<onion::engine::IncrementalCpuEngine>(patterns, threads, queue, stats, batch);
 
     std::signal(SIGINT, on_sigint);
     std::stop_source stop;

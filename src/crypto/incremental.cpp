@@ -18,7 +18,7 @@ IncrementalStepper::IncrementalStepper(std::span<const std::byte, 32> a0) {
     cur_ = ge_scalarmult_base(a0);
     std::array<std::byte, 32> eight{};
     eight[0] = std::byte{8};
-    step8b_ = ge_to_cached(ge_scalarmult_base(eight));
+    step8b_ = ge_to_cached_affine(ge_scalarmult_base(eight));
 }
 
 void IncrementalStepper::next_batch_impl(std::array<std::byte, 32>* out, std::size_t n) {
@@ -32,7 +32,7 @@ void IncrementalStepper::next_batch_impl(std::array<std::byte, 32>* out, std::si
     for (std::size_t i = 0; i < n; ++i) {
         ys_[i] = cur_.Y;
         z_[i] = cur_.Z;
-        cur_ = ge_add(cur_, step8b_);
+        cur_ = ge_madd(cur_, step8b_);
     }
     // prefix products: prefix_[i] = z_[0]*...*z_[i]
     prefix_[0] = z_[0];

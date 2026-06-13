@@ -27,6 +27,13 @@ target_compile_options(onion_options INTERFACE -Wall -Wextra -Wpedantic)
 if(ONION_NATIVE)
   target_compile_options(onion_options INTERFACE -march=native)
 endif()
+# Release-only: Link-Time Optimization so cross-TU fe_mul/fe_sq inline into the
+# point-add hot loop, plus loop unrolling and no semantic interposition (lets the
+# linker treat global symbols as non-interposable, enabling cross-TU inlining).
+target_compile_options(onion_options INTERFACE
+  $<$<CONFIG:Release>:-flto=auto -fno-semantic-interposition -funroll-loops>)
+target_link_options(onion_options INTERFACE
+  $<$<CONFIG:Release>:-flto=auto -fno-semantic-interposition -funroll-loops>)
 if(ONION_SANITIZE)
   target_compile_options(onion_options INTERFACE -fsanitize=address,undefined -fno-omit-frame-pointer)
   target_link_options(onion_options INTERFACE -fsanitize=address,undefined)

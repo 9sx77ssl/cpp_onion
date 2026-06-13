@@ -25,6 +25,16 @@ GeCached ge_to_cached(const GeP3& p) {
     return {fe_add(p.Y, p.X), fe_sub(p.Y, p.X), p.Z, fe_mul(p.T, kD2)};
 }
 
+// Normalize p to affine (Z=1) and return its cached addend without Z.
+// x=X/Z, y=Y/Z, T=x*y. Computed once at setup, so the inversion is amortized.
+GeCachedAffine ge_to_cached_affine(const GeP3& p) {
+    Fe zinv = fe_invert(p.Z);
+    Fe x = fe_mul(p.X, zinv);
+    Fe y = fe_mul(p.Y, zinv);
+    Fe t = fe_mul(x, y);  // = X*Y/Z^2; with Z=1, T=x*y
+    return {fe_add(y, x), fe_sub(y, x), fe_mul(t, kD2)};
+}
+
 // r = p + q  (p3 + cached -> p3), unified/complete Edwards addition.
 GeP3 ge_add(const GeP3& p, const GeCached& q) {
     Fe a = fe_mul(fe_sub(p.Y, p.X), q.YminusX);
@@ -32,6 +42,20 @@ GeP3 ge_add(const GeP3& p, const GeCached& q) {
     Fe c = fe_mul(q.T2d, p.T);
     Fe d = fe_mul(p.Z, q.Z);
     d = fe_add(d, d);
+    Fe e = fe_sub(b, a);
+    Fe f = fe_sub(d, c);
+    Fe g = fe_add(d, c);
+    Fe h = fe_add(b, a);
+    return {fe_mul(e, f), fe_mul(g, h), fe_mul(f, g), fe_mul(e, h)};
+}
+
+// r = p + q, q affine (Z=1). Identical to ge_add except d = 2*p.Z replaces
+// d = 2*(p.Z*q.Z), saving one fe_mul per addition.
+GeP3 ge_madd(const GeP3& p, const GeCachedAffine& q) {
+    Fe a = fe_mul(fe_sub(p.Y, p.X), q.YminusX);
+    Fe b = fe_mul(fe_add(p.Y, p.X), q.YplusX);
+    Fe c = fe_mul(q.T2d, p.T);
+    Fe d = fe_add(p.Z, p.Z);  // 2 * p.Z  (q.Z == 1)
     Fe e = fe_sub(b, a);
     Fe f = fe_sub(d, c);
     Fe g = fe_add(d, c);
