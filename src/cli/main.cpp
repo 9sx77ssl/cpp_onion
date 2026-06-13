@@ -5,6 +5,10 @@
 #include "io/tor_key_writer.hpp"
 #include "io/verifier.hpp"
 
+#ifdef ONION_CUDA
+#include "engine/cuda/cuda_engine.hpp"
+#endif
+
 #include <CLI/CLI.hpp>
 
 #include <algorithm>
@@ -45,7 +49,8 @@ int main(int argc, char** argv) {
     std::string simd_mode = "auto";  // auto -> fastest on this CPU (scalar on Zen 2); on -> force AVX2 x4
     double bench_seconds = 0.0;
     std::size_t batch = 1024;
-    app.add_option("--engine", engine_name, "engine: incremental (default) or naive");
+    app.add_option("--engine", engine_name,
+                   "engine: incremental (default), naive, or cuda (GPU; requires CUDA build)");
     app.add_option("--simd", simd_mode, "AVX2 4-wide engine: on | off | auto (default). NOTE: 4-wide is slower than scalar on Zen 2 (2x128 AVX2 + register spills), so auto uses the scalar engine here; --simd on forces x4 (wins on Zen 4+/Intel AVX-512-class cores)");
     app.add_option("--bench", bench_seconds, "benchmark: run N seconds against an impossible prefix, report keys/s");
     app.add_option("--batch", batch, "incremental engine batch size (default 1024)");
@@ -74,8 +79,17 @@ int main(int argc, char** argv) {
     // Determine which incremental variant to use.
     // --engine naive always wins; otherwise only --simd on forces the x4 engine.
     // auto/off use the scalar engine because 4-wide AVX2 measured SLOWER on Zen 2.
-    const bool use_x4 = (engine_name != "naive") && (simd_mode == "on");
-    if (engine_name == "naive")
+    const bool use_x4 = (engine_name != "naive") && (engine_name != "cuda") && (simd_mode == "on");
+    if (engine_name == "cuda") {
+#ifdef ONION_CUDA
+        engine = std::make_unique<onion::cuda::CudaEngine>(patterns, queue, stats);
+#else
+        std::println(stderr,
+                     "error: --engine cuda requires a CUDA build "
+                     "(configure with -DONION_CUDA=ON, e.g. cmake --preset cuda)");
+        return 1;
+#endif
+    } else if (engine_name == "naive")
         engine = std::make_unique<onion::engine::NaiveCpuEngine>(patterns, threads, queue, stats);
     else if (use_x4)
         engine = std::make_unique<onion::engine::IncrementalCpuEngineX4>(patterns, threads, queue, stats, batch);
@@ -92,7 +106,8 @@ int main(int argc, char** argv) {
     if (bench_seconds > 0.0) {
         std::this_thread::sleep_for(std::chrono::duration<double>(bench_seconds));
         const double secs = std::chrono::duration<double>(clock::now() - start).count();
-        const std::string variant = (engine_name == "naive") ? "naive"
+        const std::string variant = (engine_name == "cuda") ? "cuda"
+                                    : (engine_name == "naive") ? "naive"
                                     : use_x4 ? "incremental+avx2x4"
                                              : "incremental";
         std::println("bench: {:.2f} M keys/s ({} candidates in {:.1f}s, {} threads, {})",
