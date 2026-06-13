@@ -1,5 +1,7 @@
 # cpp_onion
 
+Полное руководство по командам: [USAGE.md](USAGE.md)
+
 A high-performance **Tor v3 vanity onion address generator** in modern C++23.
 
 Give it a prefix; it searches ed25519 keypairs until one's `.onion` address starts
