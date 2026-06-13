@@ -69,9 +69,15 @@ int main(int argc, char** argv) {
         patterns.push_back(std::move(*compiled));
     }
     const double expected_tries = std::pow(32.0, double(shortest));
-    if (!quiet)
-        std::println("searching {} pattern(s), {} threads, ~{:.3g} expected candidates per match",
-                     patterns.size(), threads, expected_tries);
+    if (!quiet) {
+        if (engine_name == "cuda")
+            std::println("searching {} pattern(s) on GPU (CUDA — tens of thousands of device "
+                         "threads; --threads does not apply), ~{:.3g} expected candidates per match",
+                         patterns.size(), expected_tries);
+        else
+            std::println("searching {} pattern(s), {} threads, ~{:.3g} expected candidates per match",
+                         patterns.size(), threads, expected_tries);
+    }
 
     onion::engine::ResultQueue queue;
     onion::engine::StatsBoard stats(threads);
@@ -106,12 +112,17 @@ int main(int argc, char** argv) {
     if (bench_seconds > 0.0) {
         std::this_thread::sleep_for(std::chrono::duration<double>(bench_seconds));
         const double secs = std::chrono::duration<double>(clock::now() - start).count();
-        const std::string variant = (engine_name == "cuda") ? "cuda"
-                                    : (engine_name == "naive") ? "naive"
-                                    : use_x4 ? "incremental+avx2x4"
-                                             : "incremental";
-        std::println("bench: {:.2f} M keys/s ({} candidates in {:.1f}s, {} threads, {})",
-                     double(stats.total()) / secs / 1e6, stats.total(), secs, threads, variant);
+        const double mkeys = double(stats.total()) / secs / 1e6;
+        if (engine_name == "cuda")
+            std::println("bench: {:.2f} M keys/s ({} candidates in {:.1f}s, GPU/CUDA)",
+                         mkeys, stats.total(), secs);
+        else {
+            const std::string variant = (engine_name == "naive") ? "naive"
+                                        : use_x4 ? "incremental+avx2x4"
+                                                 : "incremental";
+            std::println("bench: {:.2f} M keys/s ({} candidates in {:.1f}s, {} threads, {})",
+                         mkeys, stats.total(), secs, threads, variant);
+        }
         stop.request_stop();
         return 0;
     }
