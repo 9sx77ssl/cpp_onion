@@ -94,3 +94,7 @@ security model) is in [`docs/design.md`](docs/design.md).
 A recognizable prefix does **not** make an address verifiable — people checking only
 the first few characters of a 56-char address is exactly what phishing relies on.
 Always publish and verify your full address.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
