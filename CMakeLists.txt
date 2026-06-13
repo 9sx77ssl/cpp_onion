@@ -11,6 +11,24 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(ONION_NATIVE "Build with -march=native" ON)
 option(ONION_SANITIZE "Enable ASan+UBSan" OFF)
 option(ONION_USE_MOLD "Link with the mold linker when available" ON)
+option(ONION_CUDA "Build the CUDA backend" OFF)
+
+# CUDA is an OPTIONAL target (design §6 toolchain firewall): the rest of the
+# project stays on its default host compiler (GCC 16) and builds CPU-only when
+# nvcc is absent. Only when ONION_CUDA=ON do we enable the language so default
+# presets are unaffected.
+if(ONION_CUDA)
+  # Pin the CUDA host compiler to g++-15 (the proven combo with nvcc 13.3 on
+  # sm_75). NVCC_CCBIN may also be set system-wide; this is explicit and safe.
+  if(NOT DEFINED CMAKE_CUDA_HOST_COMPILER)
+    set(CMAKE_CUDA_HOST_COMPILER /usr/bin/g++-15)
+  endif()
+  enable_language(CUDA)
+  set(CMAKE_CUDA_ARCHITECTURES 75)
+  set(CMAKE_CUDA_STANDARD 20)
+  set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+  message(STATUS "CUDA backend enabled (sm_75, host compiler ${CMAKE_CUDA_HOST_COMPILER})")
+endif()
 
 if(ONION_USE_MOLD)
   find_program(MOLD_LINKER mold)

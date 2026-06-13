@@ -15,16 +15,29 @@
       "name": "asan",
       "binaryDir": "build/asan",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "ONION_NATIVE": "OFF", "ONION_SANITIZE": "ON" }
+    },
+    {
+      "name": "cuda",
+      "binaryDir": "build/cuda",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ONION_NATIVE": "ON",
+        "ONION_CUDA": "ON",
+        "CMAKE_CUDA_COMPILER": "/opt/cuda/bin/nvcc",
+        "CMAKE_CUDA_HOST_COMPILER": "/usr/bin/g++-15"
+      }
     }
   ],
   "buildPresets": [
     { "name": "debug", "configurePreset": "debug" },
     { "name": "release", "configurePreset": "release" },
-    { "name": "asan", "configurePreset": "asan" }
+    { "name": "asan", "configurePreset": "asan" },
+    { "name": "cuda", "configurePreset": "cuda" }
   ],
   "testPresets": [
     { "name": "debug", "configurePreset": "debug", "output": { "outputOnFailure": true } },
     { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
-    { "name": "asan", "configurePreset": "asan", "output": { "outputOnFailure": true } }
+    { "name": "asan", "configurePreset": "asan", "output": { "outputOnFailure": true } },
+    { "name": "cuda", "configurePreset": "cuda", "output": { "outputOnFailure": true } }
   ]
 }

@@ -34,6 +34,15 @@ set_source_files_properties(test_incremental_x4.cpp PROPERTIES COMPILE_OPTIONS "
 set_source_files_properties(test_incremental_engine_x4.cpp PROPERTIES COMPILE_OPTIONS "-mavx2")
 catch_discover_tests(onion_tests)
 
+# CUDA cross-validation gate: only built/registered when ONION_CUDA is ON, so
+# CPU-only presets (debug/release/asan) are unaffected and need no nvcc.
+if(ONION_CUDA)
+  add_executable(onion_cuda_tests test_cuda_xval.cpp)
+  target_link_libraries(onion_cuda_tests PRIVATE
+    Catch2::Catch2WithMain onion_options onion_engine_cuda PkgConfig::SODIUM)
+  catch_discover_tests(onion_cuda_tests TEST_PREFIX "cuda.")
+endif()
+
 add_test(NAME oracle_self_test
          COMMAND python3 ${CMAKE_SOURCE_DIR}/tools/verify_onion.py --self-test)
 
