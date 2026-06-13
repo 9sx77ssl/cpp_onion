@@ -23,6 +23,7 @@
 #include "crypto/keys.hpp"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 
@@ -94,6 +95,16 @@ struct CudaEngine::Impl {
             std::fprintf(stderr, "CudaEngine: too many patterns (%zu > %d)\n",
                          patterns.size(), kMaxConstPatterns);
             return false;
+        }
+        // Optional env overrides for tuning sweeps (T and block). Compile-time
+        // M lives in search_kernel.cuh. Invalid/absent values keep the defaults.
+        if (const char* e = std::getenv("ONION_CUDA_THREADS")) {
+            int v = std::atoi(e);
+            if (v > 0) knobs.threads = v;
+        }
+        if (const char* e = std::getenv("ONION_CUDA_BLOCK")) {
+            int v = std::atoi(e);
+            if (v > 0) knobs.block = v;
         }
         if (knobs.threads <= 0 || knobs.block <= 0) {
             std::fprintf(stderr, "CudaEngine: invalid knobs\n");

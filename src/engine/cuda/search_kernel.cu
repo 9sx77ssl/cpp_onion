@@ -28,10 +28,10 @@ namespace onion::cuda {
 __constant__ DevPattern c_patterns[kMaxConstPatterns];
 __constant__ int c_num_patterns;
 
-// M is a compile-time constant so the per-thread Z scratch lives in registers
-// / local memory with a known bound and the batch-inversion loops unroll.
-// 32 amortizes the ~265-mul fed_invert across 32 steps (~8 muls/step of
-// inversion overhead) while keeping the scratch small enough for sm_75.
+// Encode the recovered affine y and masked-compare against every compiled
+// pattern (held in __constant__, broadcast to all threads). On a match, record
+// (t, j, pattern_index) into the hit-slot buffer via an atomic counter; the
+// host reconstructs the scalar and the io::verify firewall is the final gate.
 __device__ __forceinline__ void
 match_and_record(const Fe& y, int t, int j, HitSlot* slots, int* hit_count) {
     uint8_t enc[32];
@@ -57,6 +57,10 @@ match_and_record(const Fe& y, int t, int j, HitSlot* slots, int* hit_count) {
 }
 
 // grid = ceil(T / block). Each thread owns one chain start point.
+// __launch_bounds__ was measured to be neutral: ptxas already settles at 178
+// registers (=> 2 resident blocks/SM at block=128 on sm_75), and the kernel is
+// field-arithmetic/local-memory bound rather than occupancy bound, so pinning
+// the launch bounds neither lowered the register count nor improved throughput.
 __global__ void search_kernel(const GeP3* __restrict__ starts,
                               const GeCachedAffine* __restrict__ bigstep,
                               int T,

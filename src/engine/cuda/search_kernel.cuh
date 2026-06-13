@@ -15,13 +15,14 @@ namespace onion::cuda {
 // (~265 field muls) across this many points via a Montgomery batch inversion,
 // so the per-step inversion cost is ~265/M muls. The kernel uses 178 registers
 // (occupancy is register-bound, constant in M), so larger M wins purely by
-// amortizing the inversion -- measured 65/116/214/252 M keys/s at M=32/64/256/
-// 512 on a GTX 1650. The per-thread Fe scratch (3 * M * 40 bytes) lives in
-// local memory: at M=256 that is ~30 KB/thread, so the local-memory reservation
-// (~ max_resident_threads * 30 KB) stays safely under the 4 GB card. M=512
-// (61 KB/thread) is ~15% faster but its reservation approaches VRAM, risking a
-// launch OOM, so 256 is the robust default knee of the curve.
-inline constexpr int kStepsPerThread = 256;
+// amortizing the inversion -- measured on a GTX 1650 at T=2^14: M=256->214,
+// 512->256, 768->267, 1024->275 M keys/s. The per-thread Y/Z/prefix scratch
+// (3 * M * 40 bytes) lives in local memory: at M=1024 that is ~120 KB/thread
+// (0 register spills), and the runtime reservation at T=2^14 measured ~1.9 GB
+// resident -- comfortably inside the 4 GB card. The curve is knee-flattening
+// (768->1024 is only ~3%) and beyond 1024 the reservation approaches VRAM with
+// negligible gain, so 1024 is the robust default knee of the curve.
+inline constexpr int kStepsPerThread = 1024;
 
 // Max compiled patterns held in __constant__ memory (broadcast to all threads).
 inline constexpr int kMaxConstPatterns = 16;

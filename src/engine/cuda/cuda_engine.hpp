@@ -16,12 +16,19 @@
 
 namespace onion::cuda {
 
-// Tunable launch knobs (all have defaults sized for a 14-SM Turing GTX 1650).
+// Tunable launch knobs (defaults are the measured optimum for a 14-SM Turing
+// GTX 1650; both can be overridden at run time via the ONION_CUDA_THREADS /
+// ONION_CUDA_BLOCK env vars for sweeps, see cuda_engine.cu::init).
 struct CudaKnobs {
-    // T = number of device threads (= interleaved chains). 2^16 saturates the
-    // GPU; each thread walks kStepsPerThread (M=32) points per launch.
-    int threads = 1 << 16;
-    // CUDA block size (threads per block). 128 gives good occupancy on sm_75.
+    // T = number of device threads (= interleaved chains). The kernel is bound
+    // by field arithmetic / local memory (178 regs => ~2 resident blocks/SM,
+    // fixed in T), so throughput is flat for T >= ~14k (enough waves to fill
+    // all 14 SMs). 2^14 is the measured knee: identical throughput to 2^15/2^16
+    // but with ~half the per-thread local-memory reservation. Each thread walks
+    // kStepsPerThread (M) points per launch.
+    int threads = 1 << 14;
+    // CUDA block size (threads per block). 128 measured best on sm_75 (>= 256
+    // is within noise; 128 keeps 2 blocks resident at 178 regs/thread).
     int block = 128;
 };
 
