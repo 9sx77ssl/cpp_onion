@@ -37,9 +37,13 @@ catch_discover_tests(onion_tests)
 # CUDA cross-validation gate: only built/registered when ONION_CUDA is ON, so
 # CPU-only presets (debug/release/asan) are unaffected and need no nvcc.
 if(ONION_CUDA)
-  add_executable(onion_cuda_tests test_cuda_xval.cpp)
+  add_executable(onion_cuda_tests test_cuda_xval.cpp test_cuda_engine.cpp)
+  # test_cuda_engine.cpp drives the real CudaEngine (onion_engine_cuda) through
+  # the IEngine seam (onion_engine) and gates GPU-found candidates through the
+  # io::verify firewall (onion_io, which pulls in libsodium).
   target_link_libraries(onion_cuda_tests PRIVATE
-    Catch2::Catch2WithMain onion_options onion_engine_cuda PkgConfig::SODIUM)
+    Catch2::Catch2WithMain onion_options Threads::Threads
+    onion_engine_cuda onion_engine onion_io onion_core onion_crypto PkgConfig::SODIUM)
   catch_discover_tests(onion_cuda_tests TEST_PREFIX "cuda.")
 endif()
 
