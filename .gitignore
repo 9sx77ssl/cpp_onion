@@ -9,3 +9,6 @@ hs_ed25519_secret_key
 
 # Local tooling / session artifacts
 .claude/
+
+# KDE folder metadata
+.directory

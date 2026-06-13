@@ -1,27 +1,99 @@
 name: ci
 on: [push, pull_request]
 
+# CPU-only build. ONION_CUDA is never enabled here: GitHub runners have no GPU.
+# ONION_NATIVE stays OFF so the build is deterministic on shared runners; the
+# AVX2 translation units (fe25519x4 / ge25519x4 / incremental_x4 /
+# incremental_engine_x4) force -mavx2 on themselves, so the SIMD path is still
+# compiled and exercised regardless. x86 GitHub runners support AVX2.
 jobs:
+  # Primary, must-be-green job: GCC 14 on ubuntu-24.04, whose libstdc++ ships
+  # the C++23 facilities this project depends on (std::expected, std::print,
+  # std::format, std::jthread). Both the Debug+ASan/UBSan path and the
+  # optimized Release path (LTO + AVX2) are built and tested.
   build-test:
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { cxx: g++-14, packages: g++-14 }
-          - { cxx: clang++-18, packages: clang-18 }
+          # Debug + AddressSanitizer + UndefinedBehaviorSanitizer.
+          - name: gcc14-asan
+            build_type: Debug
+            sanitize: "ON"
+          # Optimized Release: exercises LTO and the unrolled AVX2 hot loop.
+          - name: gcc14-release
+            build_type: Release
+            sanitize: "OFF"
+    name: ${{ matrix.name }}
+    env:
+      CC: gcc-14
+      CXX: g++-14
+      # Make ASan/UBSan failures fatal and produce readable diagnostics.
+      ASAN_OPTIONS: abort_on_error=1:detect_leaks=1:strict_string_checks=1
+      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
     steps:
       - uses: actions/checkout@v4
+
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y ${{ matrix.packages }} libsodium-dev ninja-build
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            g++-14 libsodium-dev ninja-build cmake python3
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DCMAKE_C_COMPILER=gcc-14
+          -DCMAKE_CXX_COMPILER=g++-14
+          -DONION_NATIVE=OFF
+          -DONION_USE_MOLD=OFF
+          -DONION_SANITIZE=${{ matrix.sanitize }}
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  # Optional clang job. clang-18 paired with the runner's libstdc++ cannot
+  # compile this C++23 codebase (no std::expected / std::print), so it uses
+  # libc++ 18, which does provide them. It is continue-on-error so it can never
+  # turn the overall workflow red; it exists purely as extra signal.
+  clang-libcxx:
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    name: clang18-libc++
+    env:
+      CC: clang-18
+      CXX: clang++-18
+      ASAN_OPTIONS: abort_on_error=1:detect_leaks=1
+      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang-18 libc++-18-dev libc++abi-18-dev \
+            libsodium-dev ninja-build cmake python3
+
       - name: Configure
         run: >
           cmake -S . -B build -G Ninja
           -DCMAKE_BUILD_TYPE=Debug
-          -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
+          -DCMAKE_C_COMPILER=clang-18
+          -DCMAKE_CXX_COMPILER=clang++-18
+          -DCMAKE_CXX_FLAGS="-stdlib=libc++"
+          -DCMAKE_EXE_LINKER_FLAGS="-stdlib=libc++"
           -DONION_NATIVE=OFF
-          -DONION_SANITIZE=ON
+          -DONION_USE_MOLD=OFF
+          -DONION_SANITIZE=OFF
+
       - name: Build
-        run: cmake --build build
+        run: cmake --build build --parallel
+
       - name: Test
         run: ctest --test-dir build --output-on-failure
