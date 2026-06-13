@@ -17,6 +17,7 @@ add_executable(onion_tests
   test_ge25519x4.cpp
   test_incremental.cpp
   test_incremental_engine.cpp
+  test_incremental_x4.cpp
 )
 target_link_libraries(onion_tests PRIVATE Catch2::Catch2WithMain onion_options Threads::Threads
   onion_crypto onion_core onion_engine onion_engine_cpu onion_io)
@@ -25,6 +26,8 @@ target_link_libraries(onion_tests PRIVATE Catch2::Catch2WithMain onion_options T
 # -march=native is not set.
 set_source_files_properties(test_fe25519x4.cpp PROPERTIES COMPILE_OPTIONS "-mavx2")
 set_source_files_properties(test_ge25519x4.cpp PROPERTIES COMPILE_OPTIONS "-mavx2")
+# test_incremental_x4.cpp includes incremental_x4.hpp -> ge25519x4.hpp -> Fe4 (__m256i).
+set_source_files_properties(test_incremental_x4.cpp PROPERTIES COMPILE_OPTIONS "-mavx2")
 catch_discover_tests(onion_tests)
 
 add_test(NAME oracle_self_test
