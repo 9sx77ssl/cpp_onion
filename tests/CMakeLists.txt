@@ -14,14 +14,17 @@ add_executable(onion_tests
   test_fe25519.cpp
   test_fe25519x4.cpp
   test_ge25519.cpp
+  test_ge25519x4.cpp
   test_incremental.cpp
   test_incremental_engine.cpp
 )
 target_link_libraries(onion_tests PRIVATE Catch2::Catch2WithMain onion_options Threads::Threads
   onion_crypto onion_core onion_engine onion_engine_cpu onion_io)
-# test_fe25519x4.cpp passes Fe4 (which contains __m256i) by value, so it needs
-# AVX2 even in debug/asan builds where -march=native is not set.
+# test_fe25519x4.cpp and test_ge25519x4.cpp pass Fe4/GeP3x4 (which contain
+# __m256i) by value, so they need AVX2 even in debug/asan builds where
+# -march=native is not set.
 set_source_files_properties(test_fe25519x4.cpp PROPERTIES COMPILE_OPTIONS "-mavx2")
+set_source_files_properties(test_ge25519x4.cpp PROPERTIES COMPILE_OPTIONS "-mavx2")
 catch_discover_tests(onion_tests)
 
 add_test(NAME oracle_self_test
