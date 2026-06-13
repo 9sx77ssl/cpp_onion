@@ -1,3 +1,11 @@
 build/
 .cache/
 __pycache__/
+
+# Generated vanity keys — NEVER commit (contains ed25519 secret keys)
+keys/
+*.onion/
+hs_ed25519_secret_key
+
+# Local tooling / session artifacts
+.claude/

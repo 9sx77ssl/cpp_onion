@@ -1,60 +1,96 @@
 # cpp_onion
 
-A high-performance Tor v3 vanity onion address generator in modern C++23.
+A high-performance **Tor v3 vanity onion address generator** in modern C++23.
 
-**Status: Phase 1** — incremental ed25519 engine is the default (~62x the
-naive baseline; see speed table below). The naive engine is retained for
-cross-checking via `--engine naive`. See `docs/design.md` for the full
-engineering design.
+Give it a prefix; it searches ed25519 keypairs until one's `.onion` address starts
+with it, then writes the key material in the exact format Tor expects.
 
-## Build
+```
+$ onion rsz -t 12 -o ./keys
+found: rszzquwmwlnthf3ue5n7gtveepnb4224zrq42qutaqbxf4qpas2txmyd.onion -> ./keys/rsz...
+```
 
-Requires: GCC 14+ (project targets GCC 16), CMake 3.28+, libsodium, Python 3.
-Optionally uses the [mold](https://github.com/rui314/mold) linker when present.
+## Why it's fast
 
-    cmake --preset release
-    cmake --build --preset release
-    ctest --preset release
+A naive generator does a full ed25519 scalar multiplication (~250 point ops) per
+candidate. cpp_onion instead uses an **incremental search** (the `mkp224o` approach):
+pick one random base scalar `a₀`, then walk `A, A+8B, A+16B, …` — **one point
+addition per candidate** — and recover the affine `y` for a whole batch with a single
+field inversion (Montgomery's trick). That's ~100× less arithmetic per key.
 
-## Speed (measured, AMD/Intel, release build, `-O3`)
+The field and group arithmetic (`fe25519`, `ge25519`) are hand-written (5×51-bit
+limbs, extended twisted-Edwards coordinates, mixed addition with an affine step
+point) and **cross-validated bit-for-bit against libsodium** — every step of the
+search provably matches `a₀+8i` times the basepoint. The release build uses
+link-time optimization to inline the field multiplies into the point-addition loop.
+
+### Speed (measured, release `-O3 -march=native -flto`)
+
+Benchmarked on an AMD Ryzen 5 4600H (Zen 2, 6C/12T):
 
 | Engine | Threads | Keys/s |
 |---|---|---|
-| naive (Phase 0, libsodium per-candidate) | 12 | 0.33 M/s |
-| incremental (Phase 1, A+=8B + batch inversion) | 6 | 16.21 M/s |
-| incremental (Phase 1, A+=8B + batch inversion) | 12 | 20.66 M/s |
+| naive (libsodium per candidate) | 12 | ~0.34 M/s |
+| **incremental** (`A+=8B` + batched inversion + mixed-add + LTO) | 12 | **~27 M/s** |
 
-Incremental engine at 12 threads is **~62x** the naive baseline.
+~80× the naive baseline (hardware/thermal dependent). Search cost scales as
+`32^L` for an `L`-char prefix: ≤6 chars is seconds, 7 is ~minutes, 8 is hours.
+The next big lever is a CUDA backend (the design targets ~10⁹ keys/s on a GPU).
+
+## Build
+
+Requires GCC 14+ (targets GCC 16), CMake ≥ 3.28, libsodium, Python 3. Uses the
+[mold](https://github.com/rui314/mold) linker automatically when present.
+
+```sh
+cmake --preset release
+cmake --build --preset release
+ctest --preset release        # KATs, libsodium cross-validation, e2e + oracle
+```
 
 ## Usage
 
-    ./build/release/src/cli/onion myname -o ./keys -t 12
+```sh
+# Generate (incremental engine is the default)
+./build/release/src/cli/onion myname -t 12 -o ./keys
 
-Searches for `myname...onion` using the incremental engine by default.
-Writes a Tor `HiddenServiceDir`-compatible directory: `hostname`,
-`hs_ed25519_secret_key`, `hs_ed25519_public_key` (dir 0700, files 0600).
-Point Tor at it:
+# Multiple prefixes (stops at the first match), naive engine for cross-checking,
+# and a throughput benchmark against an impossible prefix:
+./build/release/src/cli/onion abc xyz23 -t 12 -o ./keys
+./build/release/src/cli/onion myname --engine naive -t 12
+./build/release/src/cli/onion zzzzzzzzzzzzzzzz --bench 10 -t 12
+```
 
-Additional flags:
+Allowed prefix characters are base32: `a–z` and `2–7` (no `0 1 8 9`). The result
+directory is Tor `HiddenServiceDir`-compatible (`hostname`,
+`hs_ed25519_secret_key`, `hs_ed25519_public_key`; dir `0700`, files `0600`):
 
-    # Use the naive engine for cross-checking
-    ./build/release/src/cli/onion myname --engine naive -t 12
+```
+HiddenServiceDir /path/to/keys/myname.../
+HiddenServicePort 80 127.0.0.1:8080
+```
 
-    # Benchmark throughput (impossible prefix, no output written)
-    ./build/release/src/cli/onion zzzzzzzzzzzzzzzz --bench 10 --engine incremental -t 12
+Every found key is independently re-derived with libsodium before being written,
+and `tools/verify_onion.py` re-validates it with a from-scratch pure-Python ed25519
+implementation that shares no code with the generator.
 
-    HiddenServiceDir /path/to/keys/myname.../
-    HiddenServicePort 80 127.0.0.1:8080
+## Architecture
 
-Every found key is independently re-verified (libsodium re-derivation) before
-being written; `tools/verify_onion.py` provides a second, pure-Python oracle.
+Layered libraries behind a swappable engine interface (`IEngine`):
 
-Expected work scales as 32^L for an L-char prefix: 6 chars is seconds-to-
-minutes territory for the Phase 1 engine, 8+ chars wants the future GPU
-backend (design doc §0).
+```
+crypto/  fe25519, ge25519, incremental stepper, key derivation, SHA3-256
+core/    base32, Tor v3 address construction, prefix→byte/mask matcher
+engine/  IEngine, StatsBoard, ResultQueue, NaiveCpuEngine, IncrementalCpuEngine
+io/      verification firewall, Tor key-file writer
+cli/     the `onion` binary
+```
+
+The full engineering design (algorithm, CPU/SIMD/GPU roadmap, threading,
+security model) is in [`docs/design.md`](docs/design.md).
 
 ## A note on vanity addresses
 
-A recognizable prefix does not make an address verifiable — humans checking
-only the first few characters is exactly what phishing relies on. Publish
-and verify your full 56-character address.
+A recognizable prefix does **not** make an address verifiable — people checking only
+the first few characters of a 56-char address is exactly what phishing relies on.
+Always publish and verify your full address.
