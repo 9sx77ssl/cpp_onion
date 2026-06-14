@@ -12,6 +12,7 @@
 #include <CLI/CLI.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <csignal>
@@ -114,7 +115,14 @@ int main(int argc, char** argv) {
 
     std::signal(SIGINT, on_sigint);
     std::stop_source stop;
-    std::jthread runner([&] { engine->run(stop.get_token()); });
+    // Liveness flag: the runner sets it when run() returns. A healthy engine
+    // runs until we request stop; if it returns on its own (failed init/launch,
+    // e.g. device OOM / no GPU / too many patterns) we must not wait forever.
+    std::atomic<bool> engine_done{false};
+    std::jthread runner([&] {
+        engine->run(stop.get_token());
+        engine_done.store(true, std::memory_order_release);
+    });
 
     using clock = std::chrono::steady_clock;
     const auto start = clock::now();
@@ -166,6 +174,13 @@ int main(int argc, char** argv) {
             if (progress) std::print("\r\033[K");  // clear the in-progress line first
             std::println("found  {}  →  {}", verified->address.to_string(), dir->string());
             ++found;
+        } else if (engine_done.load(std::memory_order_acquire)) {
+            // The engine thread exited on its own without satisfying the
+            // request — a failed init/launch (it already reported the cause on
+            // stderr). Stop waiting for a candidate that will never arrive
+            // instead of blocking forever.
+            if (exit_code == 0) exit_code = 4;
+            break;
         }
 
         if (progress) {
