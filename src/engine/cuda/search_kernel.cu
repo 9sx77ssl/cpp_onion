@@ -57,10 +57,12 @@ match_and_record(const Fe& y, int t, int j, HitSlot* slots, int* hit_count) {
 }
 
 // grid = ceil(T / block). Each thread owns one chain start point.
-// __launch_bounds__ was measured to be neutral: ptxas already settles at 178
-// registers (=> 2 resident blocks/SM at block=128 on sm_75), and the kernel is
-// field-arithmetic/local-memory bound rather than occupancy bound, so pinning
-// the launch bounds neither lowered the register count nor improved throughput.
+// __launch_bounds__ was measured to be neutral: ptxas settles at a register
+// count that already leaves 2 resident blocks/SM at block=128 on sm_75 (~113
+// regs/thread for the default 32-bit field at M=3072; 178 for the 51-bit
+// reference field), and the kernel is field-arithmetic/local-memory bound
+// rather than occupancy bound, so pinning the launch bounds neither lowered the
+// register count nor improved throughput.
 __global__ void search_kernel(const GeP3* __restrict__ starts,
                               const GeCachedAffine* __restrict__ bigstep,
                               int T,

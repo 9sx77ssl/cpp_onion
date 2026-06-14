@@ -153,9 +153,11 @@ report keys/s). User-facing command guide (Russian): [`USAGE.md`](USAGE.md).
   Zen 4+/Intel AVX-512-class cores). Kept, not deleted.
 - **CUDA: prefer the native 32-bit field, not `__int128`.** `__int128` works on
   device but is emulated/slow on Turing (fast 32-bit IMAD, emulated 64-bit
-  mul). `device_field32.cuh` cut the kernel from 178 → **96 regs/thread, zero
-  spills**, raising occupancy (~275 → ~306 M/s). `device_field.cuh` is the
-  slower reference.
+  mul). `device_field32.cuh` cut the kernel from 178 → **~113 regs/thread at the
+  committed M=3072 (0 spills; ~96 at the early M=256/1024 sweep)**, raising
+  occupancy. Combined with the fused 2-array batch inversion and the M=3072 /
+  double-buffered pipeline (see `docs/design.md` §6), throughput rose ~275 →
+  **~390 M/s**. `device_field.cuh` is the slower reference.
 - **CUDA host compiler is g++-15** (nvcc rejects GCC 16). Target sm_75.
 - **NEVER commit secret keys.** `keys/` and the `.claude` session dirs are
   gitignored. Generated `hs_ed25519_secret_key` files are real secrets.
@@ -172,11 +174,11 @@ GTX 1650 (Turing, sm_75, 14 SMs, 4 GB):
 | naive (libsodium per candidate) | | 12 | ~0.34 M/s |
 | **incremental** (`A+=8B` + batch inversion) — CPU default | | 12 | **~25–28 M/s** |
 | incremental + AVX2 4-wide | `--simd on` | 12 | ~21 M/s (slower on Zen 2) |
-| **CUDA** (interleaved chains, M=1024, native 32-bit field) | `--engine cuda` | GPU | **~306 M/s** |
+| **CUDA** (interleaved chains, M=3072, native 32-bit field) | `--engine cuda` | GPU | **~390 M/s** |
 
 **vs `mkp224o`** (same machine): mkp224o CPU (amd64-51-30k, 12t) ≈ 28.9 M/s;
 cpp_onion CPU incremental 12t ≈ 28.1 M/s (on par). mkp224o has no GPU backend;
-cpp_onion CUDA ≈ 306–310 M/s ≈ **~10.7–12× the 12-thread CPU** and ~11× mkp224o
+cpp_onion CUDA ≈ 390 M/s ≈ **~13–15× the 12-thread CPU** and ~13× mkp224o
 on this GPU. The design's optimistic ~10⁹ assumes a far larger GPU; honest
 numbers here are GPU-bound. The GPU build is leak-checked
 (`compute-sanitizer --tool memcheck --leak-check full`: 0 bytes / 0 errors).

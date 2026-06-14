@@ -222,8 +222,9 @@ struct CudaEngine::Impl {
             return false;
         }
 #ifdef ONION_CUDA_FIELD32
-        // The native 32-bit field uses 96 regs/thread (vs 178 for the 51-bit
-        // __int128 field) and a 32-byte Fe (vs 40), so more threads stay
+        // The native 32-bit field uses ~113 regs/thread at the committed M=3072
+        // (0 spills; ~96 at the early M=256/1024 sweep) vs 178 for the 51-bit
+        // __int128 field, and a 32-byte Fe (vs 40), so more threads stay
         // resident AND the per-thread local-memory reservation is smaller. T =
         // 2^15 measured fastest (~302 M keys/s vs ~290 at 2^14) and its ~3.2 GB
         // local reservation fits the 4 GB card. Only bump if the caller left

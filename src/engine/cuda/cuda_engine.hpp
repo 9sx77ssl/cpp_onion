@@ -21,14 +21,15 @@ namespace onion::cuda {
 // ONION_CUDA_BLOCK env vars for sweeps, see cuda_engine.cu::init).
 struct CudaKnobs {
     // T = number of device threads (= interleaved chains). The kernel is bound
-    // by field arithmetic / local memory (178 regs => ~2 resident blocks/SM,
-    // fixed in T), so throughput is flat for T >= ~14k (enough waves to fill
-    // all 14 SMs). 2^14 is the measured knee: identical throughput to 2^15/2^16
-    // but with ~half the per-thread local-memory reservation. Each thread walks
-    // kStepsPerThread (M) points per launch.
+    // by field arithmetic / local memory (~113 regs/thread for the default
+    // 32-bit field at M=3072, 178 for the 51-bit reference field; both leave
+    // ~2 resident blocks/SM, fixed in T), so throughput is flat for T >= ~14k
+    // (enough waves to fill all 14 SMs). 2^14 is the measured knee: identical
+    // throughput to 2^15/2^16 but with ~half the per-thread local-memory
+    // reservation. Each thread walks kStepsPerThread (M) points per launch.
     int threads = 1 << 14;
     // CUDA block size (threads per block). 128 measured best on sm_75 (>= 256
-    // is within noise; 128 keeps 2 blocks resident at 178 regs/thread).
+    // is within noise; 128 keeps 2 blocks resident at the kernel's reg count).
     int block = 128;
 };
 

@@ -7,8 +7,13 @@
 //                           Turing speedup path.
 //
 // Define ONION_CUDA_FIELD32 (via the CMake option ONION_CUDA_FIELD32=ON) to use
-// the 32-bit field in the search kernel. The xval gate compiles BOTH paths into
-// separate harness entry points so the new field is always cross-validated.
+// the 32-bit field in the search kernel. The xval gate
+// (tests/test_cuda_xval.cpp -> run_incremental_xval) cross-validates whichever
+// field THIS define selects against libsodium base_noclamp(a0+8i) bit-for-bit.
+// The default build (FIELD32=ON) validates the 32-bit field; the 51-bit
+// reference path is validated only when configured with -DONION_CUDA_FIELD32=OFF
+// (no preset/CI sets it OFF, so the two fields are never compared to each
+// other -- each is independently checked against libsodium when selected).
 //
 // Both headers export the identical surface (Fe, GeP3, GeCachedAffine,
 // fed_add/sub/mul/sq/invert/from_bytes/to_bytes, fed_kD2, ged_madd), so the

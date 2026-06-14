@@ -20,9 +20,10 @@
 // reduction to [0, p). Internal ops therefore work with representatives that
 // may be in [0, 2^256), which is closed under the operations below.
 //
-// CORRECTNESS: this field is cross-validated bit-for-bit against the
-// libsodium-validated 51-bit path (test_cuda_xval32) before it is wired into
-// the hot kernel. Never weaken that gate.
+// CORRECTNESS: when selected (ONION_CUDA_FIELD32=ON, the default), this field
+// is cross-validated bit-for-bit against libsodium base_noclamp(a0+8i) by the
+// xval gate (tests/test_cuda_xval.cpp -> run_incremental_xval). Never weaken
+// that gate.
 
 #include <cstdint>
 
@@ -186,8 +187,10 @@ __device__ __forceinline__ Fe fed32_reduce_wide(const uint32_t r[16]) {
 
 // Schoolbook 8x8 -> 16-limb product, then weak-reduce (2^256 = 38 mod p). Uses
 // native 32-bit MACs with a 32-bit running carry (a 64-bit accumulate per term
-// extracts lo/hi). Measured the lowest register count (96/thread on sm_75) and
-// the best throughput of the variants tried -- an interleaved-reduction column
+// extracts lo/hi). Measured the lowest register count (the kernel settles at
+// ~96 regs/thread with the early M=256/1024 sweep, ~113 regs/thread at the
+// committed M=3072, 0 spills either way on sm_75 per ptxas -v) and the best
+// throughput of the variants tried -- an interleaved-reduction column
 // form needs a 9-limb 64-bit accumulator that costs ~24 more registers and ran
 // slightly slower here. Validated on host bit-for-bit vs the libsodium field.
 __device__ __forceinline__ Fe fed_mul(const Fe& a, const Fe& b) {

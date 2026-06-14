@@ -35,7 +35,7 @@ TEST_CASE("CUDA engine finds a 3-char prefix and the candidate verifies") {
     std::stop_source stop;
     std::jthread runner([&] { eng.run(stop.get_token()); });
 
-    // One epoch scans T*M = 2^16 * 256 ~= 16.7M candidates; a 3-char prefix
+    // One epoch scans T*M = 2^15 * 3072 ~= 100M candidates; a 3-char prefix
     // (~32k expected) is found in the first launch. 60s is a wide safety margin
     // that also tolerates device init / first-launch JIT.
     auto cand = queue.pop_wait_for(60s);
