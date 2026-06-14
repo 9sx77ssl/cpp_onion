@@ -52,6 +52,25 @@ __global__ void incremental_chain(const GeP3* starts,
         }                                                                     \
     } while (0)
 
+// Minimal RAII owner of a cudaMalloc'd buffer for this test harness, mirroring
+// cuda_engine.cu's CudaBuf discipline: any CUDA_CHK early-return below frees
+// every already-acquired buffer via the destructor (cudaFree(nullptr) is a
+// no-op). Keeps the one non-production code path in the CUDA backend leak-clean
+// on the error paths too, not just on success.
+template <typename T>
+class ScopedCudaBuf {
+public:
+    ScopedCudaBuf() = default;
+    ~ScopedCudaBuf() { if (p_) cudaFree(p_); }
+    ScopedCudaBuf(const ScopedCudaBuf&) = delete;
+    ScopedCudaBuf& operator=(const ScopedCudaBuf&) = delete;
+    cudaError_t alloc(size_t n) { return cudaMalloc(&p_, n * sizeof(T)); }
+    [[nodiscard]] T* get() const noexcept { return p_; }
+
+private:
+    T* p_ = nullptr;
+};
+
 }  // namespace
 
 int run_incremental_xval(const uint8_t* a0, uint8_t* out_y, int n_chains, int steps) {
@@ -71,29 +90,28 @@ int run_incremental_xval(const uint8_t* a0, uint8_t* out_y, int n_chains, int st
     GeCachedAffine h_step = to_device_cached(step);
 
     // --- Upload, launch, download. ---
-    GeP3* d_starts = nullptr;
-    GeCachedAffine* d_step = nullptr;
-    uint8_t* d_out = nullptr;
+    // RAII-owned device buffers: every CUDA_CHK early-return below frees them.
+    ScopedCudaBuf<GeP3> d_starts;
+    ScopedCudaBuf<GeCachedAffine> d_step;
+    ScopedCudaBuf<uint8_t> d_out;
     const size_t out_bytes = (size_t)n_chains * steps * 32;
 
-    CUDA_CHK(cudaMalloc(&d_starts, (size_t)n_chains * sizeof(GeP3)));
-    CUDA_CHK(cudaMalloc(&d_step, sizeof(GeCachedAffine)));
-    CUDA_CHK(cudaMalloc(&d_out, out_bytes));
-    CUDA_CHK(cudaMemcpy(d_starts, h_starts.data(), (size_t)n_chains * sizeof(GeP3),
+    CUDA_CHK(d_starts.alloc((size_t)n_chains));
+    CUDA_CHK(d_step.alloc(1));
+    CUDA_CHK(d_out.alloc(out_bytes));
+    CUDA_CHK(cudaMemcpy(d_starts.get(), h_starts.data(), (size_t)n_chains * sizeof(GeP3),
                         cudaMemcpyHostToDevice));
-    CUDA_CHK(cudaMemcpy(d_step, &h_step, sizeof(GeCachedAffine), cudaMemcpyHostToDevice));
+    CUDA_CHK(cudaMemcpy(d_step.get(), &h_step, sizeof(GeCachedAffine),
+                        cudaMemcpyHostToDevice));
 
     const int block = 64;
     const int grid = (n_chains + block - 1) / block;
-    incremental_chain<<<grid, block>>>(d_starts, d_step, d_out, n_chains, steps);
+    incremental_chain<<<grid, block>>>(d_starts.get(), d_step.get(), d_out.get(),
+                                       n_chains, steps);
     CUDA_CHK(cudaGetLastError());
     CUDA_CHK(cudaDeviceSynchronize());
 
-    CUDA_CHK(cudaMemcpy(out_y, d_out, out_bytes, cudaMemcpyDeviceToHost));
-
-    cudaFree(d_starts);
-    cudaFree(d_step);
-    cudaFree(d_out);
+    CUDA_CHK(cudaMemcpy(out_y, d_out.get(), out_bytes, cudaMemcpyDeviceToHost));
     return 0;
 }
 
