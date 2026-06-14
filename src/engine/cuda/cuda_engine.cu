@@ -119,11 +119,10 @@ public:
 
     CudaStream(const CudaStream&) = delete;
     CudaStream& operator=(const CudaStream&) = delete;
+    // Move-constructible only: these are fixed pipeline-slot array members that
+    // are never reassigned, so a move-assignment operator would be dead code
+    // (and nvcc flags the unreferenced concrete-class operator with #177-D).
     CudaStream(CudaStream&& o) noexcept : s_(std::exchange(o.s_, nullptr)) {}
-    CudaStream& operator=(CudaStream&& o) noexcept {
-        if (this != &o) { reset(); s_ = std::exchange(o.s_, nullptr); }
-        return *this;
-    }
 
     cudaError_t create() {
         reset();
