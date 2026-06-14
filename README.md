@@ -62,26 +62,30 @@ batch inversion. The device field uses **native 8×32-bit limbs** with
 `mul.wide`/`mad.hi` carry chains — Turing has fast 32-bit IMAD and only emulates
 64-bit/`__int128` multiplies, so the 32-bit field cut the kernel from 178 to
 **96 registers/thread with zero spills**, raising occupancy. On the GTX 1650 it
-sustains ~390 M keys/s. The kernel is **local-memory-bandwidth bound** (the
-per-thread batch-inversion scratch streams from DRAM-backed local memory), so the
-wins that stuck reduced or hid that traffic: a **fused 2-array batch inversion**
-(drop the redundant `prefix[]` array, 302→323 M/s), a **re-swept steps-per-thread
-knee** (M 1024→3072 amortizes the single inversion further almost for free until
-VRAM runs out, 323→340 M/s), and a **double-buffered epoch pipeline** (overlap the
-host point-add setup + H2D with the running kernel so the GPU never idles between
+sustains ~390 M keys/s. The kernel is **integer-ALU / multiply-issue bound** (the
+hot loop is ~11 `fed_mul`/key of 32-bit IMAD + carry adds, and the card is pinned
+at its **50 W power cap**; on-card profiling measures local memory at only ~7–9% of
+the wall time, see [`docs/devlog/gpu-optimization-research.md`](docs/devlog/gpu-optimization-research.md)),
+so the wins that stuck cut the *multiply count per key* or kept the ALU fed: a
+**fused 2-array batch inversion** (drop the redundant `prefix[]` array, 302→323
+M/s), a **re-swept steps-per-thread knee** (M 1024→3072 amortizes the single
+inversion's ~265 muls over more steps almost for free until VRAM runs out,
+323→340 M/s), and a **double-buffered epoch pipeline** (overlap the host
+point-add setup + H2D with the running kernel so the GPU never idles between
 epochs, 340→390 M/s). Levers that did *not* help on this card were honestly tried
 and reverted: warp-cooperative inversion (the `__shfl` scan added more field-mul
 work than the local-memory traffic it saved, −46%) and lifting occupancy past
-62.5% (the bus is already saturated, so extra resident warps just contend — 0%).
+62.5% (the kernel is issue-bound, not latency-bound, so extra resident warps just
+contend — 0%).
 
 **This ~390 M/s is the GTX 1650 ceiling for this workload, and the gap to
 multi-Gk/s is hardware, not software.** A Blackwell-class card reaches multi-Gk/s
 because it has ~20–30× the compute of this Turing GTX 1650 (e.g. a friend's
 Blackwell measures ~7 Gk/s; 7 Gk/s ÷ ~24 ≈ our ~310–390 M/s per card). The same
 code scales onto a bigger GPU — `1 Gk/s is simply not reachable on a 14-SM, 4 GB
-GTX 1650`. The remaining algorithmic lever would be a fundamentally smaller
-per-thread inversion footprint, but the bus-bound profile here leaves little to
-extract.
+GTX 1650`. The remaining lever would be cutting the per-key `fed_mul` count, but
+that floor is algorithmic (7-mul Edwards mixed addition + ~4-mul amortized batch
+inversion), so the ALU-issue/power-capped profile here leaves little to extract.
 
 ## Benchmarks vs mkp224o
 

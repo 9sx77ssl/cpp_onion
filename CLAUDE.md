@@ -157,7 +157,11 @@ report keys/s). User-facing command guide (Russian): [`USAGE.md`](USAGE.md).
   committed M=3072 (0 spills; ~96 at the early M=256/1024 sweep)**, raising
   occupancy. Combined with the fused 2-array batch inversion and the M=3072 /
   double-buffered pipeline (see `docs/design.md` §6), throughput rose ~275 →
-  **~390 M/s**. `device_field.cuh` is the slower reference.
+  **~390 M/s**. `device_field.cuh` is the slower reference. The ~390 M/s ceiling
+  is **integer-ALU / `fed_mul`-issue bound (and pinned at the 50 W power cap)**,
+  NOT local-memory-bandwidth bound — every memory-traffic-cutting experiment lost
+  throughput; see `docs/devlog/gpu-optimization-research.md` for the on-card
+  profiling that established this.
 - **CUDA host compiler is g++-15** (nvcc rejects GCC 16). Target sm_75.
 - **NEVER commit secret keys.** `keys/` and the `.claude` session dirs are
   gitignored. Generated `hs_ed25519_secret_key` files are real secrets.
