@@ -25,8 +25,19 @@ if(ONION_CUDA)
   endif()
   enable_language(CUDA)
   set(CMAKE_CUDA_ARCHITECTURES 75)
+  # CMake needs a KNOWN CUDA dialect to drive the .cu compiles; CMake 4.x + nvcc
+  # 13.3 expose CUDA20 (not CUDA23 -- requesting 23 errors "does not support this
+  # dialect"), so we satisfy the dialect machinery with standard 20. The device
+  # TUs are actually compiled at C++23 via the explicit -std=c++23 in
+  # src/engine/cuda/CMakeLists.txt (cuda_engine.cu needs matcher.hpp's
+  # std::expected). To avoid CMake ALSO emitting its own -std=c++20 (which made
+  # nvcc warn "incompatible redefinition for option std" on every .cu), clear
+  # the CUDA20 standard/extension flag mappings so the explicit -std=c++23 is the
+  # ONLY -std reaching nvcc.
   set(CMAKE_CUDA_STANDARD 20)
   set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+  set(CMAKE_CUDA20_STANDARD_COMPILE_OPTION "")
+  set(CMAKE_CUDA20_EXTENSION_COMPILE_OPTION "")
   message(STATUS "CUDA backend enabled (sm_75, host compiler ${CMAKE_CUDA_HOST_COMPILER})")
 endif()
 
