@@ -8,6 +8,7 @@ add_executable(onion_tests
   test_keys.cpp
   test_matcher.cpp
   test_engine_primitives.cpp
+  test_composite_engine.cpp
   test_naive_engine.cpp
   test_verifier.cpp
   test_tor_key_writer.cpp

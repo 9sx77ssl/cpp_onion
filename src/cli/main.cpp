@@ -1,4 +1,5 @@
 #include "core/matcher.hpp"
+#include "engine/composite_engine.hpp"
 #include "engine/cpu/incremental_engine.hpp"
 #include "engine/cpu/incremental_engine_x4.hpp"
 #include "engine/cpu/naive_engine.hpp"
@@ -47,7 +48,7 @@ int main(int argc, char** argv) {
     app.add_option("prefix", prefixes, "base32 prefix(es) to search for (a-z, 2-7)")
         ->required();
     app.add_option("-o,--out", outdir, "output directory");
-    app.add_option("-t,--threads", threads, "worker threads");
+    auto* threads_opt = app.add_option("-t,--threads", threads, "worker threads");
     app.add_option("-n,--count", count,
                    "keys to find before exiting; 0 = run forever (Ctrl+C to stop)");
     app.add_flag("-q,--quiet", quiet, "suppress progress output");
@@ -56,12 +57,22 @@ int main(int argc, char** argv) {
     double bench_seconds = 0.0;
     std::size_t batch = 1024;
     app.add_option("--engine", engine_name,
-                   "engine: incremental (default), naive, or cuda (GPU; requires CUDA build)");
+                   "engine: incremental (default), naive, cuda (GPU), or cpu+gpu "
+                   "(run the CPU incremental engine AND the GPU together; needs a CUDA build)");
     app.add_option("--simd", simd_mode, "AVX2 4-wide engine: on | off | auto (default). NOTE: 4-wide is slower than scalar on Zen 2 (2x128 AVX2 + register spills), so auto uses the scalar engine here; --simd on forces x4 (wins on Zen 4+/Intel AVX-512-class cores)");
     app.add_option("--bench", bench_seconds, "benchmark: run N seconds against an impossible prefix, report keys/s");
     app.add_option("--batch", batch, "incremental engine batch size (default 1024)");
     CLI11_PARSE(app, argc, argv);
     threads = std::max(1u, threads);
+
+    // cpu+gpu default: use ALL logical cores for the CPU engine. The GPU host
+    // thread sleeps on sync (blocking_sync, set at engine selection below) rather
+    // than spin-polling a core, so the CPU can take every hardware thread without
+    // starving the GPU. The user can still override with -t.
+    if (engine_name == "cpu+gpu" && threads_opt->count() == 0) {
+        const unsigned hw = std::thread::hardware_concurrency();
+        if (hw > 0) threads = hw;
+    }
 
     std::vector<onion::core::CompiledPattern> patterns;
     std::size_t shortest = std::numeric_limits<std::size_t>::max();
@@ -85,19 +96,45 @@ int main(int argc, char** argv) {
             prefix_list += prefixes[i];
         }
         const std::string engine_label =
-            (engine_name == "cuda") ? "CUDA" : std::format("{} threads", threads);
+            (engine_name == "cuda")      ? std::string("CUDA")
+            : (engine_name == "cpu+gpu") ? std::format("{} CPU threads + CUDA", threads)
+                                         : std::format("{} threads", threads);
         std::println("{} · {} · target {} · ~{:.3g} tries/match", prefix_list,
                      engine_label, target, expected_tries);
     }
 
     onion::engine::ResultQueue queue;
-    onion::engine::StatsBoard stats(threads);
+    // cpu+gpu needs one extra slot: the CPU engine writes [0, threads), the GPU
+    // writes slot `threads` (CudaKnobs::stats_slot), so total() sums both.
+    onion::engine::StatsBoard stats((engine_name == "cpu+gpu") ? threads + 1 : threads);
     std::unique_ptr<onion::engine::IEngine> engine;
     // Determine which incremental variant to use.
     // --engine naive always wins; otherwise only --simd on forces the x4 engine.
     // auto/off use the scalar engine because 4-wide AVX2 measured SLOWER on Zen 2.
-    const bool use_x4 = (engine_name != "naive") && (engine_name != "cuda") && (simd_mode == "on");
-    if (engine_name == "cuda") {
+    const bool use_x4 = (engine_name != "naive") && (engine_name != "cuda")
+                        && (engine_name != "cpu+gpu") && (simd_mode == "on");
+    if (engine_name == "cpu+gpu") {
+#ifdef ONION_CUDA
+        // Run the CPU incremental engine and the GPU engine together on disjoint
+        // random subspaces (independent seeds; collision probability nil). Both
+        // push to the same ResultQueue -> the same io::verify firewall. The CPU
+        // owns stat slots [0, threads); the GPU is handed slot `threads`.
+        std::vector<std::unique_ptr<onion::engine::IEngine>> engines;
+        engines.push_back(std::make_unique<onion::engine::IncrementalCpuEngine>(
+            patterns, threads, queue, stats, batch));
+        onion::cuda::CudaKnobs knobs;
+        knobs.stats_slot = threads;   // GPU writes the slot just past the CPU workers
+        knobs.blocking_sync = true;   // sleep on GPU sync -> free a core for a CPU worker
+        engines.push_back(std::make_unique<onion::cuda::CudaEngine>(
+            patterns, queue, stats, knobs));
+        engine = std::make_unique<onion::engine::CompositeEngine>(std::move(engines));
+#else
+        std::println(stderr,
+                     "error: --engine cpu+gpu requires a CUDA build "
+                     "(configure with -DONION_CUDA=ON, e.g. cmake --preset cuda)");
+        return 1;
+#endif
+    } else if (engine_name == "cuda") {
 #ifdef ONION_CUDA
         engine = std::make_unique<onion::cuda::CudaEngine>(patterns, queue, stats);
 #else
@@ -134,6 +171,9 @@ int main(int argc, char** argv) {
         if (engine_name == "cuda")
             std::println("bench: {:.2f} M keys/s ({} candidates in {:.1f}s, GPU/CUDA)",
                          mkeys, stats.total(), secs);
+        else if (engine_name == "cpu+gpu")
+            std::println("bench: {:.2f} M keys/s ({} candidates in {:.1f}s, {} CPU threads + GPU/CUDA)",
+                         mkeys, stats.total(), secs, threads);
         else {
             const std::string variant = (engine_name == "naive") ? "naive"
                                         : use_x4 ? "incremental+avx2x4"

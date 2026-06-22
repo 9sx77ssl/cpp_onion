@@ -240,9 +240,28 @@ struct CudaEngine::Impl {
             int v = std::atoi(e);
             if (v > 0) knobs.block = v;
         }
+        // Override the host-sync policy for tuning sweeps (1 = sleep on sync,
+        // 0 = spin). Default is set by the engine selection (true in cpu+gpu).
+        if (const char* e = std::getenv("ONION_CUDA_BLOCKING_SYNC")) {
+            knobs.blocking_sync = (std::atoi(e) != 0);
+        }
         if (knobs.threads <= 0 || knobs.block <= 0) {
             std::fprintf(stderr, "CudaEngine: invalid knobs\n");
             return false;
+        }
+
+        // In the cpu+gpu composite, sleep the host thread on GPU sync instead of
+        // spin-polling, so its core is free for a CPU worker. Must run before the
+        // first runtime call that creates the primary context (upload_patterns
+        // below). Best-effort: a scheduling hint, never fatal to the engine.
+        if (knobs.blocking_sync) {
+            cudaError_t fe = cudaSetDeviceFlags(cudaDeviceScheduleBlockingSync);
+            if (fe != cudaSuccess && fe != cudaErrorSetOnActiveProcess) {
+                std::fprintf(stderr,
+                             "CudaEngine: blocking-sync hint not applied (%s)\n",
+                             cudaGetErrorString(fe));
+                cudaGetLastError();  // clear the sticky error
+            }
         }
 
         // Pack patterns into the device-constant form and upload. The count is
@@ -480,7 +499,7 @@ void CudaEngine::run(std::stop_token stop) {
         if (!s.drain_epoch(cur)) ++s.dropped_epoch_errors;
 
         total += per_launch;
-        s.stats.set(0, total);
+        s.stats.set(s.knobs.stats_slot, total);
 
         cur = nxt;
         cur_live = nxt_live;

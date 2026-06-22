@@ -31,6 +31,15 @@ struct CudaKnobs {
     // CUDA block size (threads per block). 128 measured best on sm_75 (>= 256
     // is within noise; 128 keeps 2 blocks resident at the kernel's reg count).
     int block = 128;
+    // Which StatsBoard slot this engine writes its cumulative count to. Default
+    // 0 (standalone). In the cpu+gpu composite the CPU engine owns slots
+    // [0, threads); the GPU is handed slot `threads` so the two never clobber.
+    unsigned stats_slot = 0;
+    // Block (sleep) the host thread on GPU sync instead of spin-polling a CPU
+    // core. Standalone GPU keeps spinning (lowest latency; the CPU is otherwise
+    // idle); in the cpu+gpu composite we set this so the freed core runs a CPU
+    // worker — the kernel is long (~258 ms/epoch) so the wakeup latency is noise.
+    bool blocking_sync = false;
 };
 
 // GPU vanity-search engine. Same IEngine seam as the CPU engines: run() blocks
