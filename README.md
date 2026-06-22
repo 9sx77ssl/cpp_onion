@@ -37,6 +37,7 @@ sm_75, 14 SMs, 4 GB):
 | **incremental** (`A+=8B` + batched inversion) — **CPU default** | | 12 | **~25 M/s** |
 | incremental + AVX2 4-wide (Fe4 SoA, 4 lanes) | `--simd on` | 12 | ~21 M/s |
 | **CUDA** (interleaved chains, batched inversion, fused 2-array M=3072, double-buffered epoch pipeline, native 32-bit field) | `--engine cuda` | GPU | **~390 M/s** |
+| **CPU+GPU together** (incremental + CUDA concurrently; GPU host thread sleeps on sync so the CPU keeps all cores) | `--engine cpu+gpu` | 12 + GPU | **~415 M/s** |
 
 The CPU incremental engine is ~70–80× the naive baseline (hardware/thermal
 dependent). The **CUDA backend is ~15.4× the 12-thread CPU incremental engine**
@@ -143,6 +144,10 @@ ctest --preset cuda           # adds the GPU device-chain libsodium xval + firew
 ./build/cuda/src/cli/onion myname --engine cuda -o ./keys
 ./build/cuda/src/cli/onion zzzzzzzzzzzzzzzz --engine cuda --bench 10
 ./build/release/src/cli/onion zzzzzzzzzzzzzzzz --bench 10 -t 12 --simd off   # scalar A/B
+
+# CPU + GPU together — fastest on a single box (~415 M/s = GPU + all CPU cores):
+./build/cuda/src/cli/onion myname --engine cpu+gpu -o ./keys
+./build/cuda/src/cli/onion zzzzzzzzzzzzzzzz --engine cpu+gpu --bench 10
 ```
 
 Allowed prefix characters are base32: `a–z` and `2–7` (no `0 1 8 9`). The result

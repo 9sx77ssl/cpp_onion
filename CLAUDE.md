@@ -109,7 +109,7 @@ preset and top `CMakeLists.txt` under `if(ONION_CUDA)`. Without a CUDA
 toolchain the CUDA target and its tests are simply not built.
 
 CLI flags (see `src/cli/main.cpp`): `-o/--out`, `-t/--threads`, `-n/--count`,
-`-q/--quiet`, `--engine {naive|incremental|cuda}`, `--simd {on|off|auto}`,
+`-q/--quiet`, `--engine {naive|incremental|cuda|cpu+gpu}`, `--simd {on|off|auto}`,
 `--batch N` (default 1024), `--bench SECONDS` (run against an impossible prefix,
 report keys/s). User-facing command guide (Russian): [`USAGE.md`](USAGE.md).
 
@@ -179,6 +179,14 @@ GTX 1650 (Turing, sm_75, 14 SMs, 4 GB):
 | **incremental** (`A+=8B` + batch inversion) — CPU default | | 12 | **~25–28 M/s** |
 | incremental + AVX2 4-wide | `--simd on` | 12 | ~21 M/s (slower on Zen 2) |
 | **CUDA** (interleaved chains, M=3072, native 32-bit field) | `--engine cuda` | GPU | **~390 M/s** |
+| **CPU+GPU together** (CompositeEngine: incremental + CUDA, GPU host thread sleeps on sync) | `--engine cpu+gpu` | 12 + GPU | **~415 M/s** |
+
+The `cpu+gpu` mode runs the incremental CPU engine and the CUDA engine
+concurrently on disjoint random subspaces, sharing one ResultQueue (every
+candidate still passes io::verify). It is near-perfectly additive (~390 GPU +
+~26 CPU ≈ ~415, +6.6% over GPU-alone): the GPU's host thread is set to
+`cudaDeviceScheduleBlockingSync` so it sleeps on sync instead of spin-stealing a
+core, letting the CPU keep all 12 threads without starving the GPU.
 
 **vs `mkp224o`** (same machine): mkp224o CPU (amd64-51-30k, 12t) ≈ 28.9 M/s;
 cpp_onion CPU incremental 12t ≈ 28.1 M/s (on par). mkp224o has no GPU backend;
